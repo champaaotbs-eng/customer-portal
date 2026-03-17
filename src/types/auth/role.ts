@@ -1,0 +1,1 @@
+export type Role = 'admin' | 'bus_company' | 'customer'
