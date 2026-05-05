@@ -1,6 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useAuthStore, logout } from '@/store/auth.store'
-import { ROLE_I18N_KEYS } from '@/constants/roles'
 import { APP_ROUTES } from '@/constants/app-routes'
 import { Bus, Globe, Search, Ticket, ChevronDown, LogOut, User } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -116,7 +115,7 @@ export function AppHeader() {
                             <div className="absolute right-0 top-full mt-2 min-w-[180px] rounded-xl border border-border bg-card p-1.5 shadow-xl">
                                 <div className="border-b border-border px-3 py-2 mb-1">
                                     <p className="text-xs font-semibold">{user.name}</p>
-                                    <p className="text-xs text-muted-foreground">{t(`roles.${ROLE_I18N_KEYS[user.role]}`)}</p>
+                                    <p className="text-xs text-muted-foreground">{t('roles.customer')}</p>
                                 </div>
                                 <Link
                                     to={APP_ROUTES.CUSTOMER.MY_TICKETS}

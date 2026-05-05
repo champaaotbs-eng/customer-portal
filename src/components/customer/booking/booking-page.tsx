@@ -163,19 +163,28 @@ export function BookingPage({ tripId }: { tripId: string }) {
     const stepLabels = [t('step_seat'), t('step_info'), t('step_payment')]
 
     if (bookedResult) {
+        const bookingCode = bookedResult.bookingCode ?? bookedResult.id?.slice(0, 8).toUpperCase() ?? ''
+        const isOnline = paymentMethod === 'ONLINE'
+
         return (
-            <div className="mx-auto max-w-md py-16 text-center">
-                <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-green-100">
-                    <CheckCircle2 className="h-12 w-12 text-green-600" />
+            <div className="mx-auto max-w-md py-12 text-center">
+                <div className={cn(
+                    'mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full',
+                    isOnline ? 'bg-orange-100' : 'bg-green-100',
+                )}>
+                    <CheckCircle2 className={cn('h-12 w-12', isOnline ? 'text-orange-600' : 'text-green-600')} />
                 </div>
                 <h2 className="mb-2 text-2xl font-bold">{t('success_title')}</h2>
-                <p className="mb-8 text-muted-foreground">{t('success_message')}</p>
+                <p className="mb-8 text-muted-foreground">
+                    {isOnline ? t('expires_in', { minutes: 15 }) : t('success_message')}
+                </p>
 
-                <div className="mb-8 overflow-hidden rounded-2xl border border-border bg-card">
+                {/* Boarding pass card */}
+                <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-lg">
                     <div className="bg-primary/5 px-6 py-4">
                         <p className="text-xs uppercase tracking-widest text-muted-foreground">{t('booking_code')}</p>
                         <p className="mt-1 font-mono text-3xl font-extrabold tracking-widest text-primary">
-                            {bookedResult.bookingCode ?? bookedResult.id?.slice(0, 8).toUpperCase()}
+                            {bookingCode}
                         </p>
                     </div>
                     <div className="relative mx-4">
@@ -186,7 +195,7 @@ export function BookingPage({ tripId }: { tripId: string }) {
                     <div className="grid grid-cols-2 gap-4 px-6 py-4 text-left text-sm">
                         <div>
                             <p className="text-xs text-muted-foreground">{t('summary_route')}</p>
-                            <p className="mt-0.5 font-semibold">{trip.fromLocationName} → {trip.toLocationName}</p>
+                            <p className="mt-0.5 font-semibold">{trip.fromLocationName ?? '—'} → {trip.toLocationName ?? '—'}</p>
                         </div>
                         <div>
                             <p className="text-xs text-muted-foreground">{t('summary_departure')}</p>
@@ -201,17 +210,55 @@ export function BookingPage({ tripId }: { tripId: string }) {
                             <p className="mt-0.5 font-bold text-primary">{formatVnd(bookedResult.totalAmount ?? totalPrice)}</p>
                         </div>
                     </div>
+
+                    {/* QR code for PAY_ON_BOARD */}
+                    {!isOnline && bookingCode && (
+                        <>
+                            <div className="relative mx-4">
+                                <div className="absolute -left-7 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-muted" />
+                                <div className="absolute -right-7 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-muted" />
+                                <div className="border-t border-dashed border-border" />
+                            </div>
+                            <div className="flex flex-col items-center gap-2 px-6 py-5">
+                                <p className="text-xs text-muted-foreground">Show this QR code to the driver when boarding</p>
+                                <img
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(bookingCode)}&size=180x180&margin=10`}
+                                    alt={`QR code for booking ${bookingCode}`}
+                                    className="h-44 w-44 rounded-xl border border-border"
+                                />
+                            </div>
+                        </>
+                    )}
+
+                    {/* Countdown for ONLINE payment */}
+                    {isOnline && bookedResult.expiresAt && (
+                        <>
+                            <div className="relative mx-4">
+                                <div className="absolute -left-7 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-muted" />
+                                <div className="absolute -right-7 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-muted" />
+                                <div className="border-t border-dashed border-border" />
+                            </div>
+                            <div className="flex flex-col items-center gap-1.5 px-6 py-4">
+                                <p className="text-xs text-muted-foreground">Time remaining to complete payment</p>
+                                <Countdown expiresAt={bookedResult.expiresAt} />
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+                    {isOnline ? (
+                        <Button size="lg" className="sm:flex-1">
+                            {t('go_to_payment')}
+                        </Button>
+                    ) : (
+                        <Button asChild size="lg" variant="outline">
+                            <Link to={APP_ROUTES.CUSTOMER.MY_TICKETS}>{t('view_my_tickets')}</Link>
+                        </Button>
+                    )}
                     <Button asChild variant="outline">
                         <Link to={APP_ROUTES.CUSTOMER.SEARCH}>{t('find_another_trip')}</Link>
                     </Button>
-                    {bookedResult.expiresAt && paymentMethod === 'ONLINE' && (
-                        <div className="mt-2 text-sm text-muted-foreground">
-                            <Countdown expiresAt={bookedResult.expiresAt} />
-                        </div>
-                    )}
                 </div>
             </div>
         )

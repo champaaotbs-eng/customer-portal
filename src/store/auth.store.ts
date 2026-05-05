@@ -2,65 +2,70 @@ import { Store } from '@tanstack/store'
 import { useState, useEffect } from 'react'
 import type { User } from '@/types'
 
-// ─── State ────────────────────────────────────────────────────────────────────
-
 export interface AuthState {
     user: User | null
+    accessToken: string | null
     isAuthenticated: boolean
     isLoading: boolean
 }
 
-// Persist to sessionStorage for page reloads
 const STORAGE_KEY = 'vexe_auth_user'
+const TOKEN_KEY = 'vexe_access_token'
 
-function loadFromStorage(): User | null {
+function loadFromStorage(): { user: User | null; accessToken: string | null } {
     try {
         const raw = sessionStorage.getItem(STORAGE_KEY)
-        return raw ? (JSON.parse(raw) as User) : null
+        const token = sessionStorage.getItem(TOKEN_KEY)
+        return {
+            user: raw ? (JSON.parse(raw) as User) : null,
+            accessToken: token,
+        }
     } catch {
-        return null
+        return { user: null, accessToken: null }
     }
 }
 
-const storedUser = loadFromStorage()
+const stored = loadFromStorage()
 
 export const authStore = new Store<AuthState>({
-    user: storedUser,
-    isAuthenticated: storedUser !== null,
+    user: stored.user,
+    accessToken: stored.accessToken,
+    isAuthenticated: stored.user !== null,
     isLoading: false,
 })
 
-// ─── Actions ────────────────────────────────────────────────────────────────────
-
-export function setUser(user: User | null) {
+export function setAuth(user: User | null, accessToken: string | null) {
     if (user) {
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user))
     } else {
         sessionStorage.removeItem(STORAGE_KEY)
     }
+    if (accessToken) {
+        sessionStorage.setItem(TOKEN_KEY, accessToken)
+    } else {
+        sessionStorage.removeItem(TOKEN_KEY)
+    }
     authStore.setState((s) => ({
         ...s,
         user,
+        accessToken,
         isAuthenticated: user !== null,
         isLoading: false,
     }))
 }
 
-export function logout() {
-    setUser(null)
+export function setUser(user: User | null) {
+    setAuth(user, user ? authStore.state.accessToken : null)
 }
-// ─── React Hook ───────────────────────────────────────────────────────────────
 
-/**
- * React hook to subscribe to auth state changes.
- * Use this instead of @tanstack/react-store's useStore,
- * as that package expects a different atom API.
- */
+export function logout() {
+    setAuth(null, null)
+}
+
 export function useAuthStore(): AuthState {
     const [state, setState] = useState<AuthState>(authStore.state)
 
     useEffect(() => {
-        // subscribe returns unsubscribe fn
         return authStore.subscribe(() => {
             setState({ ...authStore.state })
         })

@@ -1,81 +1,82 @@
-// lightweight API client for bookings
-
-const BASE = import.meta.env.VITE_API_BASE_URL || ''
+const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
 function buildUrl(path: string) {
-    return BASE ? `${BASE.replace(/\/$/, '')}/api/v1${path}` : path
+    return BASE ? `${BASE}/api/v1${path}` : `/api/v1${path}`
 }
 
-function getAuthHeader(token?: string) {
+function getAuthHeader(token?: string): Record<string, string> {
     return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-async function request<T>(input: RequestInfo, init?: RequestInit) {
+async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     const res = await fetch(input, init)
     if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         const err = new Error(body?.message || res.statusText)
-            // attach server error code if present
-            ; (err as any).code = body?.code || body?.error || null
+        ;(err as any).code = body?.code || body?.error || null
         throw err
     }
     return (await res.json()) as T
 }
 
+interface CreateBookingDto {
+    tripId: string
+    seatIds: string[]
+    pickupStopId: string
+    dropoffStopId: string
+    paymentMethod: 'ONLINE' | 'PAY_ON_BOARD'
+    passengerName?: string
+    passengerPhone?: string
+}
+
 export async function createBooking(payload: CreateBookingDto, token?: string) {
-    if (!BASE) throw new Error('API base URL not configured')
-    const url = buildUrl('/bookings')
-    return request(url, {
+    return request(buildUrl('/bookings'), {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeader(token),
-        },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader(token) },
         body: JSON.stringify(payload),
+        credentials: 'include',
     })
 }
 
 export async function createCompanyBooking(payload: CreateBookingDto, companyId: string, token?: string) {
-    if (!BASE) throw new Error('API base URL not configured')
-    const url = buildUrl(`/company/bookings?companyId=${encodeURIComponent(companyId)}`)
-    return request(url, {
+    return request(buildUrl(`/company/bookings?companyId=${encodeURIComponent(companyId)}`), {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeader(token),
-        },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader(token) },
         body: JSON.stringify(payload),
+        credentials: 'include',
     })
 }
 
 export async function listMyBookings(query = '', token?: string) {
-    if (!BASE) throw new Error('API base URL not configured')
     const url = buildUrl(`/bookings/my${query ? `?${query}` : ''}`)
-    return request(url, { headers: getAuthHeader(token) })
+    return request(url, { headers: getAuthHeader(token), credentials: 'include' })
 }
 
 export async function getBookingByCode(code: string, token?: string) {
-    if (!BASE) throw new Error('API base URL not configured')
-    const url = buildUrl(`/bookings/${encodeURIComponent(code)}`)
-    return request(url, { headers: getAuthHeader(token) })
+    return request(buildUrl(`/bookings/${encodeURIComponent(code)}`), {
+        headers: getAuthHeader(token),
+        credentials: 'include',
+    })
 }
 
 export async function cancelBooking(id: string, token?: string) {
-    if (!BASE) throw new Error('API base URL not configured')
-    const url = buildUrl(`/bookings/${encodeURIComponent(id)}/cancel`)
-    return request(url, { method: 'PATCH', headers: getAuthHeader(token) })
+    return request(buildUrl(`/bookings/${encodeURIComponent(id)}/cancel`), {
+        method: 'PATCH',
+        headers: getAuthHeader(token),
+        credentials: 'include',
+    })
 }
 
 export async function listCompanyBookings(companyId: string, query = '', token?: string) {
-    if (!BASE) throw new Error('API base URL not configured')
     const url = buildUrl(`/company/bookings?companyId=${encodeURIComponent(companyId)}${query ? `&${query}` : ''}`)
-    return request(url, { headers: getAuthHeader(token) })
+    return request(url, { headers: getAuthHeader(token), credentials: 'include' })
 }
 
 export async function adminListBookings(query = '', token?: string) {
-    if (!BASE) throw new Error('API base URL not configured')
-    const url = buildUrl(`/admin/bookings${query ? `?${query}` : ''}`)
-    return request(url, { headers: getAuthHeader(token) })
+    return request(buildUrl(`/admin/bookings${query ? `?${query}` : ''}`), {
+        headers: getAuthHeader(token),
+        credentials: 'include',
+    })
 }
 
 export default {
