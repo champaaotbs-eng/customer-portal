@@ -7,7 +7,7 @@ import { AppHeader } from '@/components/shared/AppHeader'
 import { FileProvider } from '@/shared/contexts/files-context'
 import i18n from '#/i18n'
 
-import appCss from '../styles.css?url'
+import '../main.css'
 import { ValidationProvider } from 'shared/contexts/validation-context'
 
 const queryClient = new QueryClient()
@@ -23,7 +23,6 @@ export const Route = createRootRoute({
         content: 'Đặt vé xe khách online nhanh chóng, tiện lợi trên VéXe.vn',
       },
     ],
-    links: [{ rel: 'stylesheet', href: appCss }],
   }),
   shellComponent: RootDocument,
   notFoundComponent: NotFound,
@@ -35,31 +34,27 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <I18nextProvider i18n={i18n}>
         <ValidationProvider>
           <FileProvider>
-            <html lang="vi">
-              <head>
-                <HeadContent />
-              </head>
-              <body className="min-h-screen bg-background text-foreground">
-                <AppHeader />
-                {children}
-                <TanStackDevtools
-                  config={{ position: 'bottom-right' }}
-                  plugins={[
-                    {
-                      name: 'Tanstack Router',
-                      render: <TanStackRouterDevtoolsPanel />,
-                    },
-                  ]}
-                />
-                <Scripts />
-              </body>
-            </html>
+            <div className="min-h-screen bg-background text-foreground">
+              <AppHeader />
+              <RootOutlet />
+              <TanStackDevtools
+                config={{ position: 'bottom-right' }}
+                plugins={[
+                  {
+                    name: 'Tanstack Router',
+                    render: <TanStackRouterDevtoolsPanel />,
+                  },
+                ]}
+              />
+            </div>
           </FileProvider>
         </ValidationProvider>
       </I18nextProvider>
     </QueryClientProvider>
   )
 }
+
+import { Outlet as RootOutlet } from '@tanstack/react-router'
 
 function NotFound() {
   return (
