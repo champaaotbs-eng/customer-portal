@@ -315,6 +315,8 @@
             "back_btn": "Quay lại",
             "success_title": "Đặt vé thành công!",
             "success_message": "Vé của bạn đã được xác nhận.",
+            "go_to_payment": "Đi tới thanh toán",
+            "error_seats_already_booked": "Một số ghế bạn chọn đã bị đặt, vui lòng làm mới và thử lại.",
             "ticket_code": "Mã vé:",
             "booking_code": "Mã đặt vé",
             "view_my_tickets": "Xem vé của tôi",

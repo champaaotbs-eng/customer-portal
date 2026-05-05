@@ -32,6 +32,33 @@ export function formatDate(iso: string, withTime = false): string {
 }
 
 /**
+ * Format to `HH:mm:ss DD-MM-YYYY` (24h)
+ */
+export function formatDateTimeFull(iso: string): string {
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const hh = pad(d.getHours())
+    const mm = pad(d.getMinutes())
+    const ss = pad(d.getSeconds())
+    const dd = pad(d.getDate())
+    const month = pad(d.getMonth() + 1)
+    const yyyy = d.getFullYear()
+    return `${hh}:${mm}:${ss} ${dd}-${month}-${yyyy}`
+}
+
+/**
+ * Format to `DD-MM-YYYY`
+ */
+export function formatDateShort(iso: string): string {
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const dd = pad(d.getDate())
+    const month = pad(d.getMonth() + 1)
+    const yyyy = d.getFullYear()
+    return `${dd}-${month}-${yyyy}`
+}
+
+/**
  * Format duration in minutes to "Xh Ym"
  */
 export function formatDuration(minutes: number): string {

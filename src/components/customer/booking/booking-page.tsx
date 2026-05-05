@@ -1,6 +1,6 @@
-﻿import { useState, useMemo } from 'react'
+﻿import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { CheckCircle2, ChevronLeft, CreditCard, Wallet, MapPin, Clock, Bus as BusIcon, ArrowRight, User } from 'lucide-react'
 import { getTripById } from '@/services/trip.service'
@@ -125,7 +125,8 @@ export function BookingPage() {
     const [activeFloor, setActiveFloor] = useState<1 | 2>(1)
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pay_on_board')
     const [paymentProvider, setPaymentProvider] = useState<PaymentProvider>('vnpay')
-    const [bookedTicketId, setBookedTicketId] = useState<string | null>(null)
+    const [bookedTicket, setBookedTicket] = useState<any | null>(null)
+    const qc = useQueryClient()
 
     const tripQuery = useQuery({
         queryKey: ['trip', tripId],
@@ -161,7 +162,16 @@ export function BookingPage() {
     const bookMutation = useMutation({
         mutationFn: bookTicket,
         onSuccess: (ticket) => {
-            setBookedTicketId(ticket.id)
+            setBookedTicket(ticket)
+        },
+        onError: (err: any) => {
+            // handle common backend errors
+            if (err?.code === 'seats_already_booked' || /seats_already_booked/i.test(String(err?.message || ''))) {
+                alert(t('error_seats_already_booked'))
+                void qc.invalidateQueries(['tickets', 'trip', tripId])
+            } else {
+                alert(err?.message || 'Booking failed')
+            }
         },
     })
 
@@ -234,7 +244,7 @@ export function BookingPage() {
 
     // Success screen
 
-    if (bookedTicketId) {
+    if (bookedTicket) {
         return (
             <div className="mx-auto max-w-md py-16 text-center">
                 <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-green-100">
@@ -248,7 +258,7 @@ export function BookingPage() {
                     <div className="bg-primary/5 px-6 py-4">
                         <p className="text-xs uppercase tracking-widest text-muted-foreground">{t('booking_code')}</p>
                         <p className="mt-1 font-mono text-3xl font-extrabold tracking-widest text-primary">
-                            {bookedTicketId.slice(0, 8).toUpperCase()}
+                            {(bookedTicket.id || '').slice(0, 8).toUpperCase()}
                         </p>
                     </div>
                     <div className="relative mx-4">
@@ -276,6 +286,7 @@ export function BookingPage() {
                     </div>
                 </div>
 
+                {/* If online payment, show countdown and payment call-to-action */}
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
                     <Button asChild variant="outline">
                         <Link to={APP_ROUTES.CUSTOMER.SEARCH}>{t('find_another_trip')}</Link>
@@ -283,6 +294,16 @@ export function BookingPage() {
                     <Button asChild>
                         <Link to={APP_ROUTES.CUSTOMER.MY_TICKETS}>{t('view_my_tickets')}</Link>
                     </Button>
+                    {bookedTicket.expiresAt && (
+                        <div className="mx-auto mt-3 text-sm text-muted-foreground">
+                            <Countdown expiresAt={bookedTicket.expiresAt} />
+                        </div>
+                    )}
+                    {bookedTicket.paymentMethod === 'online' && (
+                        <Button onClick={() => alert('Redirecting to payment gateway...')}>
+                            {t('go_to_payment')}
+                        </Button>
+                    )}
                 </div>
             </div>
         )
@@ -758,4 +779,23 @@ function SummaryRow({ label, value, bold }: { label: string; value: string; bold
             <span className={cn('text-sm text-right', bold && 'text-base font-bold text-primary')}>{value}</span>
         </div>
     )
+}
+
+function Countdown({ expiresAt }: { expiresAt: string }) {
+    const [remaining, setRemaining] = useState(() => Math.max(0, new Date(expiresAt).getTime() - Date.now()))
+
+    useEffect(() => {
+        const id = setInterval(() => {
+            const rem = Math.max(0, new Date(expiresAt).getTime() - Date.now())
+            setRemaining(rem)
+        }, 1000)
+        return () => clearInterval(id)
+    }, [expiresAt])
+
+    const seconds = Math.floor(remaining / 1000)
+    const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
+    const ss = String(seconds % 60).padStart(2, '0')
+
+    if (seconds <= 0) return <p className="text-sm text-destructive">Expired</p>
+    return <p className="text-sm text-muted-foreground">Expires in {mm}:{ss}</p>
 }

@@ -315,6 +315,8 @@
             "back_btn": "Go Back",
             "success_title": "Booking Successful!",
             "success_message": "Your ticket has been confirmed.",
+            "go_to_payment": "Go to payment",
+            "error_seats_already_booked": "Some selected seats were already booked. Please refresh and try again.",
             "ticket_code": "Ticket Code:",
             "booking_code": "Booking Code",
             "view_my_tickets": "View My Tickets",

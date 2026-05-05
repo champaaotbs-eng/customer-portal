@@ -196,6 +196,7 @@ export interface Ticket {
     passengerPhone: string
     note?: string
     createdAt: string
+    expiresAt?: string
     pickupPointId?: string
     pickupPointName?: string
     dropoffPointId?: string
