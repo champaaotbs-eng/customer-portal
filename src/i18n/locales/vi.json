@@ -179,7 +179,14 @@
             "step3_desc": "Xác nhận và thanh toán an toàn",
             "reviews_badge": "Đánh giá",
             "reviews_title": "Khách hàng nói gì về chúng tôi",
-            "cta_desc": "Hàng triệu hành khách đã đặt vé qua VéXe.vn"
+            "cta_desc": "Hàng triệu hành khách đã đặt vé qua VéXe.vn",
+            "search_label": "Bạn muốn đi đâu?",
+            "from": "Từ",
+            "to": "Đến",
+            "from_placeholder": "Nhập điểm xuất phát",
+            "to_placeholder": "Nhập điểm đến",
+            "date": "Ngày đi",
+            "swap": "Đổi chỗ"
         },
         "login": {
             "title": "Đăng nhập",
@@ -308,6 +315,7 @@
             "summary_company": "Nhà xe",
             "summary_seats": "Ghế đã chọn",
             "summary_price_per_seat": "Giá/ghế",
+            "summary_price_per_seat_unit": "ghế",
             "summary_total": "Tổng cộng",
             "review_pickup": "Điểm đón",
             "review_dropoff": "Điểm trả",

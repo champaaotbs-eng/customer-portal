@@ -1,12 +1,9 @@
-﻿import { useState, useMemo, useEffect } from 'react'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { useState, useMemo, useEffect } from 'react'
+import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { CheckCircle2, ChevronLeft, CreditCard, Wallet, MapPin, Clock, Bus as BusIcon, ArrowRight, User } from 'lucide-react'
-import { getTripById } from '@/services/trip.service'
-import { getTicketsByTrip, bookTicket } from '@/services/booking.service'
-import { useAuthStore } from '@/store/auth.store'
-import type { TripWithDetails, Bus, PaymentMethod, PaymentProvider } from '@/types'
+import { fetchTripById, createBooking, type ApiTrip, type ApiSeat } from '@/services/trips.api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatTime, formatDate, formatVnd } from '@/utils/format'
@@ -14,66 +11,15 @@ import { APP_ROUTES } from '@/constants/app-routes'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 
-//  Seat generation helpers 
-
-interface SeatDef {
-    code: string
-    floor: 1 | 2
-    col: number // 1-indexed column within the floor layout
-}
-
-function generateSeats(bus: Bus): SeatDef[] {
-    const seats: SeatDef[] = []
-    if (bus.type === 'sleeper') {
-        const perFloor = Math.ceil(bus.totalSeats / 2)
-        const rows = Math.ceil(perFloor / 2)
-        for (let fl = 1; fl <= 2; fl++) {
-            for (let row = 0; row < rows; row++) {
-                const letter = String.fromCharCode(65 + row)
-                for (let col = 1; col <= 2; col++) {
-                    if ((fl - 1) * perFloor + row * 2 + col - 1 < bus.totalSeats) {
-                        seats.push({ code: `T${fl}-${letter}${col}`, floor: fl as 1 | 2, col })
-                    }
-                }
-            }
-        }
-    } else if (bus.type === 'vip') {
-        const seatsPerRow = 3
-        const rows = Math.ceil(bus.totalSeats / seatsPerRow)
-        for (let row = 0; row < rows; row++) {
-            const letter = String.fromCharCode(65 + row)
-            for (let col = 1; col <= seatsPerRow; col++) {
-                if (row * seatsPerRow + col - 1 < bus.totalSeats) {
-                    seats.push({ code: `${letter}${col}`, floor: 1, col })
-                }
-            }
-        }
-    } else {
-        const seatsPerRow = 4
-        const rows = Math.ceil(bus.totalSeats / seatsPerRow)
-        for (let row = 0; row < rows; row++) {
-            const letter = String.fromCharCode(65 + row)
-            for (let col = 1; col <= seatsPerRow; col++) {
-                if (row * seatsPerRow + col - 1 < bus.totalSeats) {
-                    seats.push({ code: `${letter}${col}`, floor: 1, col })
-                }
-            }
-        }
-    }
-    return seats
-}
-
-//  Passenger form 
+type PaymentMethod = 'ONLINE' | 'PAY_ON_BOARD'
 
 interface PassengerForm {
     passengerName: string
     passengerPhone: string
-    pickupPointId: string
-    dropoffPointId: string
+    pickupStopId: string
+    dropoffStopId: string
     note: string
 }
-
-//  Step indicator 
 
 function StepIndicator({ step, labels }: { step: number; labels: string[] }) {
     return (
@@ -111,113 +57,85 @@ function StepIndicator({ step, labels }: { step: number; labels: string[] }) {
     )
 }
 
-//  Main component 
-
-export function BookingPage() {
+export function BookingPage({ tripId }: { tripId: string }) {
     const { t } = useTranslation('translation', { keyPrefix: 'pages.booking' })
     const { t: tCommon } = useTranslation()
-    const { user } = useAuthStore()
-    const navigate = useNavigate()
-    const { tripId } = useParams({ strict: false }) as { tripId: string }
-
-    const [step, setStep] = useState<1 | 2 | 3>(1)
-    const [selectedSeats, setSelectedSeats] = useState<string[]>([])
-    const [activeFloor, setActiveFloor] = useState<1 | 2>(1)
-    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pay_on_board')
-    const [paymentProvider, setPaymentProvider] = useState<PaymentProvider>('vnpay')
-    const [bookedTicket, setBookedTicket] = useState<any | null>(null)
     const qc = useQueryClient()
 
-    const tripQuery = useQuery({
-        queryKey: ['trip', tripId],
-        queryFn: () => getTripById(tripId),
+    const [step, setStep] = useState<1 | 2 | 3>(1)
+    const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
+    const [activeFloor, setActiveFloor] = useState<1 | 2>(1)
+    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('PAY_ON_BOARD')
+    const [bookedResult, setBookedResult] = useState<any | null>(null)
+
+    const { data: trip, isLoading } = useQuery({
+        queryKey: ['public-trip', tripId],
+        queryFn: () => fetchTripById(tripId),
         enabled: !!tripId,
+        staleTime: 60 * 1000,
     })
 
-    const takenSeatsQuery = useQuery({
-        queryKey: ['tickets', 'trip', tripId],
-        queryFn: () => getTicketsByTrip(tripId),
-        enabled: !!tripId,
-    })
+    const seats: ApiSeat[] = trip?.seatAvailability ?? []
+    const floors = useMemo(() => Array.from(new Set(seats.map(s => s.floor))).sort(), [seats])
+    const hasMultipleFloors = floors.length > 1
 
-    const trip = tripQuery.data as TripWithDetails | null | undefined
-
-    const takenSeats = useMemo(
-        () => new Set((takenSeatsQuery.data ?? []).flatMap((tk) => tk.seatNumbers)),
-        [takenSeatsQuery.data],
+    const pickupStops = useMemo(
+        () => (trip?.tripStops ?? []).filter(s => s.stopType === 'PICKUP' || s.stopType === 'BOTH').sort((a, b) => a.sortOrder - b.sortOrder),
+        [trip],
+    )
+    const dropoffStops = useMemo(
+        () => (trip?.tripStops ?? []).filter(s => s.stopType === 'DROPOFF' || s.stopType === 'BOTH').sort((a, b) => a.sortOrder - b.sortOrder),
+        [trip],
     )
 
-    const seats = useMemo(() => (trip ? generateSeats(trip.bus) : []), [trip])
-
     const { register, handleSubmit, formState: { errors } } = useForm<PassengerForm>({
-        defaultValues: {
-            passengerName: user?.name ?? '',
-            passengerPhone: user?.phone ?? '',
-            pickupPointId: '',
-            dropoffPointId: '',
-            note: '',
-        },
+        defaultValues: { passengerName: '', passengerPhone: '', pickupStopId: '', dropoffStopId: '', note: '' },
     })
 
     const bookMutation = useMutation({
-        mutationFn: bookTicket,
-        onSuccess: (ticket) => {
-            setBookedTicket(ticket)
+        mutationFn: (payload: Parameters<typeof createBooking>[0]) => createBooking(payload),
+        onSuccess: (result) => {
+            setBookedResult(result)
+            void qc.invalidateQueries({ queryKey: ['public-trip', tripId] })
         },
         onError: (err: any) => {
-            // handle common backend errors
-            if (err?.code === 'seats_already_booked' || /seats_already_booked/i.test(String(err?.message || ''))) {
+            if (/seats_already_booked/i.test(String(err?.message || err?.code || ''))) {
                 alert(t('error_seats_already_booked'))
-                void qc.invalidateQueries(['tickets', 'trip', tripId])
+                void qc.invalidateQueries({ queryKey: ['public-trip', tripId] })
             } else {
-                alert(err?.message || 'Booking failed')
+                alert(err?.message || tCommon('common.error'))
             }
         },
     })
 
-    function toggleSeat(code: string) {
-        if (takenSeats.has(code)) return
-        setSelectedSeats((prev) =>
-            prev.includes(code) ? prev.filter((s) => s !== code) : [...prev, code],
+    function toggleSeat(seatId: string) {
+        const seat = seats.find(s => s.seatId === seatId)
+        if (!seat || !seat.isAvailable) return
+        setSelectedSeatIds(prev =>
+            prev.includes(seatId) ? prev.filter(id => id !== seatId) : [...prev, seatId],
         )
     }
 
     function onPassengerSubmit(data: PassengerForm) {
-        if (!data.pickupPointId) {
-            alert(t('pickup_required'))
-            return
-        }
-        if (!data.dropoffPointId) {
-            alert(t('dropoff_required'))
-            return
-        }
+        if (!data.pickupStopId) { alert(t('pickup_required')); return }
+        if (!data.dropoffStopId) { alert(t('dropoff_required')); return }
         setStep(3)
     }
 
     function onConfirm(data: PassengerForm) {
-        if (!trip || !user) return
-        const pickup = trip.pickupPoints.find((p) => p.id === data.pickupPointId)
-        const dropoff = trip.dropoffPoints.find((p) => p.id === data.dropoffPointId)
+        if (!trip || selectedSeatIds.length === 0) return
         bookMutation.mutate({
-            tripId: trip.id,
-            customerId: user.id,
-            seatNumbers: selectedSeats,
-            pricePerSeat: trip.pricePerSeat,
-            passengerName: data.passengerName,
-            passengerPhone: data.passengerPhone,
-            note: data.note || undefined,
-            pickupPointId: pickup?.id,
-            pickupPointName: pickup?.name,
-            dropoffPointId: dropoff?.id,
-            dropoffPointName: dropoff?.name,
+            tripId: trip.tripId,
+            seatIds: selectedSeatIds,
+            pickupStopId: data.pickupStopId,
+            dropoffStopId: data.dropoffStopId,
             paymentMethod,
-            paymentProvider: paymentMethod === 'online' ? paymentProvider : undefined,
+            passengerName: data.passengerName || undefined,
+            passengerPhone: data.passengerPhone || undefined,
         })
     }
 
-    // Loading / not found
-
-    if (tripQuery.isLoading) {
+    if (isLoading) {
         return (
             <div className="flex items-center justify-center py-24">
                 <div className="text-center">
@@ -227,6 +145,7 @@ export function BookingPage() {
             </div>
         )
     }
+
     if (!trip) {
         return (
             <div className="flex flex-col items-center gap-4 py-24 text-center">
@@ -239,12 +158,11 @@ export function BookingPage() {
         )
     }
 
+    const selectedSeats = seats.filter(s => selectedSeatIds.includes(s.seatId))
+    const totalPrice = selectedSeats.reduce((sum, s) => sum + (trip.basePrice + s.price), 0)
     const stepLabels = [t('step_seat'), t('step_info'), t('step_payment')]
-    const totalPrice = selectedSeats.length * trip.pricePerSeat
 
-    // Success screen
-
-    if (bookedTicket) {
+    if (bookedResult) {
         return (
             <div className="mx-auto max-w-md py-16 text-center">
                 <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-green-100">
@@ -253,12 +171,11 @@ export function BookingPage() {
                 <h2 className="mb-2 text-2xl font-bold">{t('success_title')}</h2>
                 <p className="mb-8 text-muted-foreground">{t('success_message')}</p>
 
-                {/* Boarding pass ticket */}
                 <div className="mb-8 overflow-hidden rounded-2xl border border-border bg-card">
                     <div className="bg-primary/5 px-6 py-4">
                         <p className="text-xs uppercase tracking-widest text-muted-foreground">{t('booking_code')}</p>
                         <p className="mt-1 font-mono text-3xl font-extrabold tracking-widest text-primary">
-                            {(bookedTicket.id || '').slice(0, 8).toUpperCase()}
+                            {bookedResult.bookingCode ?? bookedResult.id?.slice(0, 8).toUpperCase()}
                         </p>
                     </div>
                     <div className="relative mx-4">
@@ -269,7 +186,7 @@ export function BookingPage() {
                     <div className="grid grid-cols-2 gap-4 px-6 py-4 text-left text-sm">
                         <div>
                             <p className="text-xs text-muted-foreground">{t('summary_route')}</p>
-                            <p className="mt-0.5 font-semibold">{trip.route.from} → {trip.route.to}</p>
+                            <p className="mt-0.5 font-semibold">{trip.fromLocationName} → {trip.toLocationName}</p>
                         </div>
                         <div>
                             <p className="text-xs text-muted-foreground">{t('summary_departure')}</p>
@@ -277,32 +194,23 @@ export function BookingPage() {
                         </div>
                         <div>
                             <p className="text-xs text-muted-foreground">{t('summary_seats')}</p>
-                            <p className="mt-0.5 font-semibold">{selectedSeats.join(', ')}</p>
+                            <p className="mt-0.5 font-semibold">{selectedSeats.map(s => s.seatCode).join(', ')}</p>
                         </div>
                         <div>
                             <p className="text-xs text-muted-foreground">{t('summary_total')}</p>
-                            <p className="mt-0.5 font-bold text-primary">{formatVnd(totalPrice)}</p>
+                            <p className="mt-0.5 font-bold text-primary">{formatVnd(bookedResult.totalAmount ?? totalPrice)}</p>
                         </div>
                     </div>
                 </div>
 
-                {/* If online payment, show countdown and payment call-to-action */}
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
                     <Button asChild variant="outline">
                         <Link to={APP_ROUTES.CUSTOMER.SEARCH}>{t('find_another_trip')}</Link>
                     </Button>
-                    <Button asChild>
-                        <Link to={APP_ROUTES.CUSTOMER.MY_TICKETS}>{t('view_my_tickets')}</Link>
-                    </Button>
-                    {bookedTicket.expiresAt && (
-                        <div className="mx-auto mt-3 text-sm text-muted-foreground">
-                            <Countdown expiresAt={bookedTicket.expiresAt} />
+                    {bookedResult.expiresAt && paymentMethod === 'ONLINE' && (
+                        <div className="mt-2 text-sm text-muted-foreground">
+                            <Countdown expiresAt={bookedResult.expiresAt} />
                         </div>
-                    )}
-                    {bookedTicket.paymentMethod === 'online' && (
-                        <Button onClick={() => alert('Redirecting to payment gateway...')}>
-                            {t('go_to_payment')}
-                        </Button>
                     )}
                 </div>
             </div>
@@ -311,22 +219,18 @@ export function BookingPage() {
 
     return (
         <div className="space-y-6">
-            {/* Step indicator */}
             <div className="rounded-2xl border border-border bg-card p-5">
                 <StepIndicator step={step} labels={stepLabels} />
             </div>
 
-            {/*  Step 1: Seat selection  */}
             {step === 1 && (
                 <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
                     <div className="space-y-4">
-                        {/* Trip info */}
                         <TripInfoBar trip={trip} />
 
-                        {/* Floor tabs for sleeper */}
-                        {trip.bus.type === 'sleeper' && (
+                        {hasMultipleFloors && (
                             <div className="flex gap-2">
-                                {[1, 2].map((fl) => (
+                                {floors.map(fl => (
                                     <button
                                         key={fl}
                                         type="button"
@@ -344,46 +248,40 @@ export function BookingPage() {
                             </div>
                         )}
 
-                        {/* Seat map */}
                         <div className="rounded-2xl border border-border bg-card p-6">
                             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                                 <h2 className="font-semibold">{t('select_seat')}</h2>
                                 <SeatLegend t={t} />
                             </div>
-                            {/* Bus front indicator */}
                             <div className="mb-5 flex items-center gap-2 rounded-lg bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
                                 <BusIcon className="h-4 w-4 shrink-0" />
-                                <span>Front of bus</span>
-                                <span className="ml-auto">{tCommon('busType.' + trip.bus.type)}</span>
+                                <span>{t('front_of_bus', 'Front of bus')}</span>
                             </div>
                             <SeatMap
-                                seats={seats.filter((s) => trip.bus.type !== 'sleeper' || s.floor === activeFloor)}
-                                takenSeats={takenSeats}
-                                selected={selectedSeats}
+                                seats={seats.filter(s => !hasMultipleFloors || s.floor === activeFloor)}
+                                selectedIds={selectedSeatIds}
                                 onToggle={toggleSeat}
-                                busType={trip.bus.type}
                             />
                         </div>
                     </div>
 
-                    {/* Sidebar: seat summary */}
                     <div className="self-start space-y-4 lg:sticky lg:top-24">
                         <div className="rounded-2xl border border-border bg-card p-5">
                             <h3 className="mb-4 font-semibold">{t('order_summary')}</h3>
                             {selectedSeats.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">No seats selected yet</p>
+                                <p className="text-sm text-muted-foreground">{t('no_seats_selected', 'No seats selected yet')}</p>
                             ) : (
                                 <div className="space-y-3">
                                     <div className="flex flex-wrap gap-1.5">
-                                        {selectedSeats.map((s) => (
+                                        {selectedSeats.map(s => (
                                             <span
-                                                key={s}
+                                                key={s.seatId}
                                                 className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary"
                                             >
-                                                {s}
+                                                {s.seatCode}
                                                 <button
                                                     type="button"
-                                                    onClick={() => toggleSeat(s)}
+                                                    onClick={() => toggleSeat(s.seatId)}
                                                     className="text-primary/60 hover:text-primary leading-none"
                                                 >
                                                     ×
@@ -393,7 +291,7 @@ export function BookingPage() {
                                     </div>
                                     <div className="border-t border-border pt-3">
                                         <div className="flex items-center justify-between text-sm">
-                                            <span className="text-muted-foreground">{selectedSeats.length} × {formatVnd(trip.pricePerSeat)}</span>
+                                            <span className="text-muted-foreground">{selectedSeats.length} × {t('summary_price_per_seat_unit')}</span>
                                             <span className="font-bold text-primary">{formatVnd(totalPrice)}</span>
                                         </div>
                                     </div>
@@ -403,23 +301,21 @@ export function BookingPage() {
                         <Button
                             className="w-full"
                             size="lg"
-                            disabled={selectedSeats.length === 0}
+                            disabled={selectedSeatIds.length === 0}
                             onClick={() => setStep(2)}
                         >
-                            {t('continue_btn', { count: selectedSeats.length })}
+                            {t('continue_btn', { count: selectedSeatIds.length })}
                         </Button>
                     </div>
                 </div>
             )}
 
-            {/*  Step 2: Passenger info + pickup/dropoff  */}
             {step === 2 && (
                 <form onSubmit={handleSubmit(onPassengerSubmit)}>
                     <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
                         <div className="space-y-4">
-                            <TripInfoBar trip={trip} seats={selectedSeats} />
+                            <TripInfoBar trip={trip} seatCodes={selectedSeats.map(s => s.seatCode)} />
 
-                            {/* Pickup & Dropoff side by side */}
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
                                     <div className="flex items-center gap-2">
@@ -429,17 +325,17 @@ export function BookingPage() {
                                         <h2 className="font-semibold">{t('pickup_title')}</h2>
                                     </div>
                                     <select
-                                        {...register('pickupPointId', { required: true })}
+                                        {...register('pickupStopId', { required: true })}
                                         className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                     >
                                         <option value="">{t('select_pickup')}</option>
-                                        {trip.pickupPoints.map((p) => (
-                                            <option key={p.id} value={p.id}>
-                                                {formatTime(p.time)} – {p.name}
+                                        {pickupStops.map(p => (
+                                            <option key={p.tripStopId} value={p.tripStopId}>
+                                                {p.pickupTime ? formatTime(p.pickupTime) : ''}{p.pickupTime ? ' – ' : ''}{p.locationName}
                                             </option>
                                         ))}
                                     </select>
-                                    {errors.pickupPointId && (
+                                    {errors.pickupStopId && (
                                         <p className="text-xs text-destructive">{t('pickup_required')}</p>
                                     )}
                                 </div>
@@ -452,23 +348,22 @@ export function BookingPage() {
                                         <h2 className="font-semibold">{t('dropoff_title')}</h2>
                                     </div>
                                     <select
-                                        {...register('dropoffPointId', { required: true })}
+                                        {...register('dropoffStopId', { required: true })}
                                         className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                     >
                                         <option value="">{t('select_dropoff')}</option>
-                                        {trip.dropoffPoints.map((p) => (
-                                            <option key={p.id} value={p.id}>
-                                                {formatTime(p.time)} – {p.name}
+                                        {dropoffStops.map(p => (
+                                            <option key={p.tripStopId} value={p.tripStopId}>
+                                                {p.dropoffTime ? formatTime(p.dropoffTime) : ''}{p.dropoffTime ? ' – ' : ''}{p.locationName}
                                             </option>
                                         ))}
                                     </select>
-                                    {errors.dropoffPointId && (
+                                    {errors.dropoffStopId && (
                                         <p className="text-xs text-destructive">{t('dropoff_required')}</p>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Passenger info */}
                             <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
                                 <div className="flex items-center gap-2">
                                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -500,14 +395,12 @@ export function BookingPage() {
                             </div>
                         </div>
 
-                        {/* Sidebar: order summary */}
                         <div className="self-start space-y-4 lg:sticky lg:top-24">
                             <div className="rounded-2xl border border-border bg-card p-5 space-y-2">
                                 <h3 className="mb-3 font-semibold">{t('order_summary')}</h3>
-                                <SummaryRow label={t('summary_route')} value={`${trip.route.from} → ${trip.route.to}`} />
+                                <SummaryRow label={t('summary_route')} value={`${trip.fromLocationName ?? '—'} → ${trip.toLocationName ?? '—'}`} />
                                 <SummaryRow label={t('summary_departure')} value={formatDate(trip.departureTime)} />
-                                <SummaryRow label={t('summary_seats')} value={selectedSeats.join(', ')} />
-                                <SummaryRow label={t('summary_price_per_seat')} value={formatVnd(trip.pricePerSeat)} />
+                                <SummaryRow label={t('summary_seats')} value={selectedSeats.map(s => s.seatCode).join(', ')} />
                                 <div className="border-t border-border pt-2">
                                     <SummaryRow label={t('summary_total')} value={formatVnd(totalPrice)} bold />
                                 </div>
@@ -521,20 +414,18 @@ export function BookingPage() {
                             {t('back_btn')}
                         </Button>
                         <Button type="submit" size="lg">
-                            {t('continue_btn', { count: selectedSeats.length })}
+                            {t('continue_btn', { count: selectedSeatIds.length })}
                         </Button>
                     </div>
                 </form>
             )}
 
-            {/*  Step 3: Payment + confirm  */}
             {step === 3 && (
                 <form onSubmit={handleSubmit(onConfirm)}>
                     <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
                         <div className="space-y-4">
-                            <TripInfoBar trip={trip} seats={selectedSeats} />
+                            <TripInfoBar trip={trip} seatCodes={selectedSeats.map(s => s.seatCode)} />
 
-                            {/* Payment method */}
                             <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
                                 <div className="flex items-center gap-2">
                                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -545,72 +436,47 @@ export function BookingPage() {
                                 <div className="grid grid-cols-2 gap-3">
                                     <button
                                         type="button"
-                                        onClick={() => setPaymentMethod('online')}
+                                        onClick={() => setPaymentMethod('ONLINE')}
                                         className={cn(
                                             'flex items-center gap-3 rounded-xl border-2 p-4 text-left transition',
-                                            paymentMethod === 'online'
+                                            paymentMethod === 'ONLINE'
                                                 ? 'border-primary bg-primary/5'
                                                 : 'border-border hover:bg-accent',
                                         )}
                                     >
-                                        <CreditCard className={cn('h-6 w-6 shrink-0', paymentMethod === 'online' ? 'text-primary' : 'text-muted-foreground')} />
+                                        <CreditCard className={cn('h-6 w-6 shrink-0', paymentMethod === 'ONLINE' ? 'text-primary' : 'text-muted-foreground')} />
                                         <div>
                                             <p className="text-sm font-semibold">{t('payment_online')}</p>
-                                            <p className="text-xs text-muted-foreground">VNPay · MoMo · Stripe</p>
+                                            <p className="text-xs text-muted-foreground">VNPay · MoMo</p>
                                         </div>
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => setPaymentMethod('pay_on_board')}
+                                        onClick={() => setPaymentMethod('PAY_ON_BOARD')}
                                         className={cn(
                                             'flex items-center gap-3 rounded-xl border-2 p-4 text-left transition',
-                                            paymentMethod === 'pay_on_board'
+                                            paymentMethod === 'PAY_ON_BOARD'
                                                 ? 'border-primary bg-primary/5'
                                                 : 'border-border hover:bg-accent',
                                         )}
                                     >
-                                        <Wallet className={cn('h-6 w-6 shrink-0', paymentMethod === 'pay_on_board' ? 'text-primary' : 'text-muted-foreground')} />
+                                        <Wallet className={cn('h-6 w-6 shrink-0', paymentMethod === 'PAY_ON_BOARD' ? 'text-primary' : 'text-muted-foreground')} />
                                         <div>
                                             <p className="text-sm font-semibold">{t('payment_on_board')}</p>
                                             <p className="text-xs text-muted-foreground">{t('payment_note_on_board')}</p>
                                         </div>
                                     </button>
                                 </div>
-
-                                {paymentMethod === 'online' && (
-                                    <div className="space-y-2 pt-1">
-                                        <p className="text-sm font-medium">{t('payment_provider_label')}</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {(['vnpay', 'momo', 'stripe'] as PaymentProvider[]).map((p) => (
-                                                <button
-                                                    key={p}
-                                                    type="button"
-                                                    onClick={() => setPaymentProvider(p)}
-                                                    className={cn(
-                                                        'rounded-lg border-2 px-5 py-2 text-sm font-medium transition',
-                                                        paymentProvider === p
-                                                            ? 'border-primary bg-primary text-primary-foreground'
-                                                            : 'border-border bg-background hover:bg-accent',
-                                                    )}
-                                                >
-                                                    {tCommon(`paymentProvider.${p}`)}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                         </div>
 
-                        {/* Sidebar: order summary + confirm button */}
                         <div className="self-start space-y-4 lg:sticky lg:top-24">
                             <div className="rounded-2xl border border-border bg-card p-5 space-y-2">
                                 <h3 className="mb-3 font-semibold">{t('order_summary')}</h3>
-                                <SummaryRow label={t('summary_route')} value={`${trip.route.from} → ${trip.route.to}`} />
+                                <SummaryRow label={t('summary_route')} value={`${trip.fromLocationName ?? '—'} → ${trip.toLocationName ?? '—'}`} />
                                 <SummaryRow label={t('summary_departure')} value={`${formatDate(trip.departureTime)} ${formatTime(trip.departureTime)}`} />
-                                <SummaryRow label={t('summary_company')} value={trip.company.name} />
-                                <SummaryRow label={t('summary_seats')} value={selectedSeats.join(', ')} />
-                                <SummaryRow label={t('summary_price_per_seat')} value={formatVnd(trip.pricePerSeat)} />
+                                {trip.busCompanyName && <SummaryRow label={t('summary_company')} value={trip.busCompanyName} />}
+                                <SummaryRow label={t('summary_seats')} value={selectedSeats.map(s => s.seatCode).join(', ')} />
                                 <div className="border-t border-border pt-2">
                                     <SummaryRow label={t('summary_total')} value={formatVnd(totalPrice)} bold />
                                 </div>
@@ -633,9 +499,7 @@ export function BookingPage() {
     )
 }
 
-//  Sub-components 
-
-function TripInfoBar({ trip, seats }: { trip: TripWithDetails; seats?: string[] }) {
+function TripInfoBar({ trip, seatCodes }: { trip: ApiTrip; seatCodes?: string[] }) {
     return (
         <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-r from-primary/5 to-background">
             <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
@@ -646,12 +510,12 @@ function TripInfoBar({ trip, seats }: { trip: TripWithDetails; seats?: string[] 
                     <div className="flex items-center gap-3">
                         <div>
                             <p className="text-xl font-bold leading-none">{formatTime(trip.departureTime)}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{trip.route.from}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{trip.fromLocationName ?? '—'}</p>
                         </div>
                         <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <div>
                             <p className="text-xl font-bold leading-none">{formatTime(trip.arrivalTime)}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{trip.route.to}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{trip.toLocationName ?? '—'}</p>
                         </div>
                     </div>
                 </div>
@@ -660,17 +524,21 @@ function TripInfoBar({ trip, seats }: { trip: TripWithDetails; seats?: string[] 
                         <Clock className="h-3.5 w-3.5" />
                         {formatDate(trip.departureTime)}
                     </span>
-                    <span>·</span>
-                    <span>{trip.company.name}</span>
-                    {seats && seats.length > 0 && (
+                    {trip.busCompanyName && (
                         <>
                             <span>·</span>
-                            <span className="font-medium text-foreground">{seats.join(', ')}</span>
+                            <span>{trip.busCompanyName}</span>
+                        </>
+                    )}
+                    {seatCodes && seatCodes.length > 0 && (
+                        <>
+                            <span>·</span>
+                            <span className="font-medium text-foreground">{seatCodes.join(', ')}</span>
                         </>
                     )}
                 </div>
                 <div className="text-right">
-                    <p className="text-xl font-bold text-primary">{formatVnd(trip.pricePerSeat)}</p>
+                    <p className="text-xl font-bold text-primary">{formatVnd(trip.basePrice)}</p>
                     <p className="text-xs text-muted-foreground">/ seat</p>
                 </div>
             </div>
@@ -699,34 +567,27 @@ function SeatLegend({ t }: { t: ReturnType<typeof useTranslation>['t'] }) {
 
 function SeatMap({
     seats,
-    takenSeats,
-    selected,
+    selectedIds,
     onToggle,
-    busType,
 }: {
-    seats: SeatDef[]
-    takenSeats: Set<string>
-    selected: string[]
-    onToggle: (code: string) => void
-    busType: string
+    seats: ApiSeat[]
+    selectedIds: string[]
+    onToggle: (seatId: string) => void
 }) {
-    const colsPerRow = busType === 'sleeper' ? 2 : busType === 'vip' ? 3 : 4
-    const hasAisle = busType === 'seat'
-
-    // Group by row letter
-    const rowMap = new Map<string, SeatDef[]>()
+    const rowMap = new Map<number, ApiSeat[]>()
     for (const seat of seats) {
-        const letter = seat.code.replace(/[^A-Z]/g, '').slice(-1)
-        if (!rowMap.has(letter)) rowMap.set(letter, [])
-        rowMap.get(letter)!.push(seat)
+        if (!rowMap.has(seat.row)) rowMap.set(seat.row, [])
+        rowMap.get(seat.row)!.push(seat)
     }
+    const sortedRows = Array.from(rowMap.entries()).sort((a, b) => a[0] - b[0])
+    const maxCol = seats.reduce((m, s) => Math.max(m, s.col), 0)
+    const hasAisle = maxCol >= 4
 
     return (
         <div className="space-y-2">
-            {/* Column headers */}
-            <div className={cn('flex gap-1.5', hasAisle && 'gap-0')}>
+            <div className="flex gap-1.5">
                 <div className="w-8" />
-                {Array.from({ length: colsPerRow }, (_, i) => (
+                {Array.from({ length: maxCol }, (_, i) => (
                     <div
                         key={i}
                         className={cn(
@@ -739,35 +600,40 @@ function SeatMap({
                 ))}
             </div>
 
-            {Array.from(rowMap.entries()).map(([letter, rowSeats]) => (
-                <div key={letter} className={cn('flex items-center gap-1.5', hasAisle && 'gap-0')}>
-                    <div className="flex w-8 items-center justify-center text-xs font-medium text-muted-foreground">{letter}</div>
-                    {rowSeats.map((seat) => {
-                        const taken = takenSeats.has(seat.code)
-                        const isSelected = selected.includes(seat.code)
-                        return (
-                            <button
-                                key={seat.code}
-                                type="button"
-                                disabled={taken}
-                                onClick={() => onToggle(seat.code)}
-                                title={seat.code}
-                                className={cn(
-                                    'flex h-10 w-10 items-center justify-center rounded-lg text-xs font-semibold transition-all',
-                                    hasAisle && seat.col >= 3 && 'ml-4',
-                                    taken
-                                        ? 'cursor-not-allowed bg-muted text-muted-foreground'
-                                        : isSelected
-                                            ? 'border-2 border-primary bg-primary text-primary-foreground shadow-sm'
-                                            : 'border-2 border-border bg-background hover:border-primary hover:bg-primary/5',
-                                )}
-                            >
-                                {seat.col}
-                            </button>
-                        )
-                    })}
-                </div>
-            ))}
+            {sortedRows.map(([row, rowSeats]) => {
+                const sorted = [...rowSeats].sort((a, b) => a.col - b.col)
+                return (
+                    <div key={row} className="flex items-center gap-1.5">
+                        <div className="flex w-8 items-center justify-center text-xs font-medium text-muted-foreground">
+                            {String.fromCharCode(64 + row)}
+                        </div>
+                        {sorted.map(seat => {
+                            const isSelected = selectedIds.includes(seat.seatId)
+                            const taken = !seat.isAvailable
+                            return (
+                                <button
+                                    key={seat.seatId}
+                                    type="button"
+                                    disabled={taken}
+                                    onClick={() => onToggle(seat.seatId)}
+                                    title={seat.seatCode}
+                                    className={cn(
+                                        'flex h-10 w-10 items-center justify-center rounded-lg text-xs font-semibold transition-all',
+                                        hasAisle && seat.col >= 3 && 'ml-4',
+                                        taken
+                                            ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                                            : isSelected
+                                                ? 'border-2 border-primary bg-primary text-primary-foreground shadow-sm'
+                                                : 'border-2 border-border bg-background hover:border-primary hover:bg-primary/5',
+                                    )}
+                                >
+                                    {seat.col}
+                                </button>
+                            )
+                        })}
+                    </div>
+                )
+            })}
         </div>
     )
 }
@@ -786,8 +652,7 @@ function Countdown({ expiresAt }: { expiresAt: string }) {
 
     useEffect(() => {
         const id = setInterval(() => {
-            const rem = Math.max(0, new Date(expiresAt).getTime() - Date.now())
-            setRemaining(rem)
+            setRemaining(Math.max(0, new Date(expiresAt).getTime() - Date.now()))
         }, 1000)
         return () => clearInterval(id)
     }, [expiresAt])

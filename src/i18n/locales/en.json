@@ -179,7 +179,14 @@
             "step3_desc": "Confirm and pay securely online or on board",
             "reviews_badge": "Reviews",
             "reviews_title": "What our customers say",
-            "cta_desc": "Join millions of happy travelers booking tickets with VéXe.vn"
+            "cta_desc": "Join millions of happy travelers booking tickets with VéXe.vn",
+            "search_label": "Where would you like to go?",
+            "from": "From",
+            "to": "To",
+            "from_placeholder": "Enter origin city",
+            "to_placeholder": "Enter destination city",
+            "date": "Travel Date",
+            "swap": "Swap"
         },
         "login": {
             "title": "Login",
@@ -308,6 +315,7 @@
             "summary_company": "Company",
             "summary_seats": "Selected Seats",
             "summary_price_per_seat": "Price per seat",
+            "summary_price_per_seat_unit": "seat(s)",
             "summary_total": "Total",
             "review_pickup": "Pickup",
             "review_dropoff": "Dropoff",
