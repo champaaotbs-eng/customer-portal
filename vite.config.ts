@@ -8,11 +8,15 @@ import tailwindcss from '@tailwindcss/vite'
 const config = defineConfig({
   plugins: [
     tanstackRouter(),
-    devtools(),
+    // devtools(),
     tsconfigPaths({ projects: ['./tsconfig.json'] }),
     tailwindcss(),
     viteReact(),
   ],
+  server: {
+    port: 5174,
+    strictPort: false
+  }
 })
 
 export default config
