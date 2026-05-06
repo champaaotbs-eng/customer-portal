@@ -57,24 +57,20 @@ export function CustomerSearchPage() {
     const shouldFetch = !!(searchParams.date)
 
     const { data: tripData, isLoading, isError } = useQuery({
-        queryKey: ['public-trips', searchParams.date],
-        queryFn: () => fetchTrips({ departureDate: searchParams.date, limit: 200 }),
+        queryKey: ['public-trips', searchParams.date, searchParams.from, searchParams.to],
+        queryFn: () => fetchTrips({
+            departureDate: searchParams.date,
+            fromLocation: searchParams.from || undefined,
+            toLocation: searchParams.to || undefined,
+            limit: 200,
+        }),
         enabled: shouldFetch,
         staleTime: 2 * 60 * 1000,
     })
 
     const allTrips: ApiTrip[] = tripData?.result ?? []
 
-    const filteredBySearch = useMemo(() => {
-        if (!searchParams.from && !searchParams.to) return allTrips
-        return allTrips.filter(trip => {
-            const fromMatch = !searchParams.from ||
-                (trip.fromLocationName ?? '').toLowerCase().includes(searchParams.from.toLowerCase())
-            const toMatch = !searchParams.to ||
-                (trip.toLocationName ?? '').toLowerCase().includes(searchParams.to.toLowerCase())
-            return fromMatch && toMatch
-        })
-    }, [allTrips, searchParams.from, searchParams.to])
+    const filteredBySearch = allTrips
 
     const availableCompanies = useMemo(
         () => Array.from(new Set(filteredBySearch.map(t => t.busCompanyName ?? ''))).filter(Boolean),

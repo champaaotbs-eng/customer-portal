@@ -79,6 +79,14 @@ export async function adminListBookings(query = '', token?: string) {
     })
 }
 
+export async function confirmPayment(bookingCode: string) {
+    return request(buildUrl('/bookings/webhook/payment'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bookingCode }),
+    })
+}
+
 export default {
     createBooking,
     createCompanyBooking,
@@ -87,4 +95,5 @@ export default {
     cancelBooking,
     listCompanyBookings,
     adminListBookings,
+    confirmPayment,
 }

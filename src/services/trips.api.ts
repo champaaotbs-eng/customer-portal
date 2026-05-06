@@ -9,7 +9,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         const err = new Error(body?.message || res.statusText)
-        ;(err as any).code = body?.code || null
+            ; (err as any).code = body?.code || null
         throw err
     }
     const json = await res.json()
@@ -62,15 +62,22 @@ export interface TripListResponse {
 
 export async function fetchTrips(params: {
     departureDate: string
+    fromLocation?: string
+    toLocation?: string
     limit?: number
     page?: number
 }): Promise<TripListResponse> {
-    const filters = JSON.stringify({ departureDate: params.departureDate, isPublished: true })
-    const url = new URL(buildUrl('/trips'))
-    url.searchParams.set('filters', filters)
-    url.searchParams.set('limit', String(params.limit ?? 100))
-    url.searchParams.set('page', String(params.page ?? 1))
-    return request<TripListResponse>(url.toString())
+    const filters: Record<string, unknown> = { departureDate: params.departureDate, isPublished: true }
+    const fromTerm = params.fromLocation?.trim()
+    const toTerm = params.toLocation?.trim()
+    if (fromTerm) filters.fromLocation = fromTerm
+    if (toTerm) filters.toLocation = toTerm
+    const qs = new URLSearchParams({
+        filters: JSON.stringify(filters),
+        limit: String(params.limit ?? 100),
+        page: String(params.page ?? 1),
+    })
+    return request<TripListResponse>(`${buildUrl('/trips')}?${qs}`)
 }
 
 export async function fetchTripById(id: string): Promise<ApiTrip> {

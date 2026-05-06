@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { CheckCircle2, ChevronLeft, CreditCard, Wallet, MapPin, Clock, Bus as BusIcon, ArrowRight, User } from 'lucide-react'
 import { fetchTripById, createBooking, type ApiTrip, type ApiSeat } from '@/services/trips.api'
+import { confirmPayment } from '@/services/bookings.api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatTime, formatDate, formatVnd } from '@/utils/format'
@@ -67,6 +68,17 @@ export function BookingPage({ tripId }: { tripId: string }) {
     const [activeFloor, setActiveFloor] = useState<1 | 2>(1)
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('PAY_ON_BOARD')
     const [bookedResult, setBookedResult] = useState<any | null>(null)
+    const [paymentConfirmed, setPaymentConfirmed] = useState(false)
+
+    const paymentMutation = useMutation({
+        mutationFn: (bookingCode: string) => confirmPayment(bookingCode),
+        onSuccess: () => {
+            setPaymentConfirmed(true)
+        },
+        onError: (err: any) => {
+            alert(err?.message || tCommon('common.error'))
+        },
+    })
 
     const { data: trip, isLoading } = useQuery({
         queryKey: ['public-trip', tripId],
@@ -170,13 +182,15 @@ export function BookingPage({ tripId }: { tripId: string }) {
             <div className="mx-auto max-w-md py-12 text-center">
                 <div className={cn(
                     'mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full',
-                    isOnline ? 'bg-orange-100' : 'bg-green-100',
+                    isOnline && !paymentConfirmed ? 'bg-orange-100' : 'bg-green-100',
                 )}>
-                    <CheckCircle2 className={cn('h-12 w-12', isOnline ? 'text-orange-600' : 'text-green-600')} />
+                    <CheckCircle2 className={cn('h-12 w-12', isOnline && !paymentConfirmed ? 'text-orange-600' : 'text-green-600')} />
                 </div>
-                <h2 className="mb-2 text-2xl font-bold">{t('success_title')}</h2>
+                <h2 className="mb-2 text-2xl font-bold">
+                    {paymentConfirmed ? t('payment_confirmed_title', 'Thanh toán thành công!') : t('success_title')}
+                </h2>
                 <p className="mb-8 text-muted-foreground">
-                    {isOnline ? t('expires_in', { minutes: 15 }) : t('success_message')}
+                    {isOnline && !paymentConfirmed ? t('expires_in', { minutes: 15 }) : t('success_message')}
                 </p>
 
                 {/* Boarding pass card */}
@@ -247,8 +261,13 @@ export function BookingPage({ tripId }: { tripId: string }) {
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-                    {isOnline ? (
-                        <Button size="lg" className="sm:flex-1">
+                    {isOnline && !paymentConfirmed ? (
+                        <Button
+                            size="lg"
+                            className="sm:flex-1"
+                            loading={paymentMutation.isPending}
+                            onClick={() => paymentMutation.mutate(bookingCode)}
+                        >
                             {t('go_to_payment')}
                         </Button>
                     ) : (
