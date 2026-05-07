@@ -47,14 +47,16 @@ export function CustomerSearchPage() {
     const [companyFilters, setCompanyFilters] = useState<string[]>([])
     const [filterOpen, setFilterOpen] = useState(false)
 
-    // Sync form when URL params change
+    // Sync form inputs when navigating back with URL params
     useEffect(() => {
-        setFrom(searchParams.from)
-        setTo(searchParams.to)
+        if (searchParams.from) setFrom(searchParams.from)
+        if (searchParams.to) setTo(searchParams.to)
         if (searchParams.date) setDate(searchParams.date)
     }, [searchParams.from, searchParams.to, searchParams.date])
 
-    const shouldFetch = !!(searchParams.date)
+    const shouldFetch = !!(searchParams.date && searchParams.from && searchParams.to)
+
+    const hasSearched = shouldFetch
 
     const { data: tripData, isLoading, isError } = useQuery({
         queryKey: ['public-trips', searchParams.date, searchParams.from, searchParams.to],
@@ -65,7 +67,7 @@ export function CustomerSearchPage() {
             limit: 200,
         }),
         enabled: shouldFetch,
-        staleTime: 2 * 60 * 1000,
+        staleTime: 5 * 60 * 1000,
     })
 
     const allTrips: ApiTrip[] = tripData?.result ?? []
@@ -109,8 +111,6 @@ export function CustomerSearchPage() {
         setFrom(to)
         setTo(tmp)
     }
-
-    const hasSearched = !!searchParams.date
 
     return (
         <div className="space-y-6">

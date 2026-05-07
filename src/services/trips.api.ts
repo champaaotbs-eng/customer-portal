@@ -67,17 +67,14 @@ export async function fetchTrips(params: {
     limit?: number
     page?: number
 }): Promise<TripListResponse> {
-    const filters: Record<string, unknown> = { departureDate: params.departureDate, isPublished: true }
-    const fromTerm = params.fromLocation?.trim()
-    const toTerm = params.toLocation?.trim()
-    if (fromTerm) filters.fromLocation = fromTerm
-    if (toTerm) filters.toLocation = toTerm
     const qs = new URLSearchParams({
-        filters: JSON.stringify(filters),
+        date: params.departureDate,
+        ...(params.fromLocation?.trim() ? { from: params.fromLocation.trim() } : {}),
+        ...(params.toLocation?.trim() ? { to: params.toLocation.trim() } : {}),
         limit: String(params.limit ?? 100),
         page: String(params.page ?? 1),
     })
-    return request<TripListResponse>(`${buildUrl('/trips')}?${qs}`)
+    return request<TripListResponse>(`${buildUrl('/trips/search')}?${qs}`)
 }
 
 export async function fetchTripById(id: string): Promise<ApiTrip> {
