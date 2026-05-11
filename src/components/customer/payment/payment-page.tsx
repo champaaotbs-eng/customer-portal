@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Bus as BusIcon, CreditCard, Wallet, QrCode, CheckCircle2, MapPin, ArrowRight } from 'lucide-react'
 import { fetchTripById, createBooking, type ApiSeat, type BookingResult } from '@/services/trips.api'
-import { confirmPayment } from '@/services/bookings.api'
+import { checkBookingPaymentStatus } from '@/services/bookings.api'
 import { Button } from '@/components/ui/button'
 import { formatDate, formatTime, formatVnd } from '@/utils/format'
 import { APP_ROUTES } from '@/constants/app-routes'
@@ -66,6 +66,9 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ONLINE')
     const [bookedResult, setBookedResult] = useState<BookingResult | null>(null)
     const [paymentConfirmed, setPaymentConfirmed] = useState(false)
+    const [statusMessage, setStatusMessage] = useState<string | null>(null)
+    const [isExpired, setIsExpired] = useState(false)
+    const autoBookingRef = useRef(false)
 
     const { data: trip, isLoading } = useQuery({
         queryKey: ['public-trip', tripId],
@@ -87,8 +90,10 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
         }),
         onSuccess: (result) => {
             setBookedResult(result)
+            setStatusMessage(null)
         },
         onError: (err: any) => {
+            autoBookingRef.current = false
             if (/seats_already_booked/i.test(String(err?.message || err?.code || ''))) {
                 alert(t('error_seats_already_booked'))
             } else {
@@ -97,15 +102,39 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
         },
     })
 
-    const paymentMutation = useMutation({
-        mutationFn: (bookingCode: string) => confirmPayment(bookingCode),
-        onSuccess: () => {
-            setPaymentConfirmed(true)
+    const paymentStatusMutation = useMutation({
+        mutationFn: (bookingCode: string) => checkBookingPaymentStatus(bookingCode),
+        onSuccess: (result) => {
+            if (result.isPaid) {
+                setPaymentConfirmed(true)
+                setStatusMessage(null)
+                return
+            }
+            if (result.isExpired) {
+                setIsExpired(true)
+                setStatusMessage(t('payment_expired'))
+                return
+            }
+            setStatusMessage(t('payment_not_received'))
         },
         onError: (err: any) => {
             alert(err?.message || tCommon('common.error'))
         },
     })
+
+    useEffect(() => {
+        if (paymentMethod !== 'ONLINE') return
+        if (bookedResult || bookingMutation.isPending || autoBookingRef.current) return
+        autoBookingRef.current = true
+        bookingMutation.mutate()
+    }, [paymentMethod, bookedResult, bookingMutation.isPending, bookingMutation.mutate])
+
+    useEffect(() => {
+        if (!bookedResult?.expiresAt) return
+        if (Date.now() > new Date(bookedResult.expiresAt).getTime()) {
+            setIsExpired(true)
+        }
+    }, [bookedResult?.expiresAt])
 
     if (isLoading) {
         return (
@@ -138,9 +167,9 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     const dropoffStop = (trip.tripStops ?? []).find(s => s.tripStopId === search.dropoffStopId)
     const stepLabels = [t('step_seat'), t('step_info'), t('step_payment')]
 
-    const canConfirmPayment = paymentMethod === 'ONLINE' && bookingCode && !paymentConfirmed
+    const canCheckPayment = paymentMethod === 'ONLINE' && bookingCode && !paymentConfirmed && !isExpired
     const isPayOnBoard = paymentMethod === 'PAY_ON_BOARD'
-    const isReadyToBook = !bookedResult && seatIdList.length > 0
+    const isReadyToBook = isPayOnBoard && !bookedResult && seatIdList.length > 0
 
     return (
         <div className="space-y-6">
@@ -247,7 +276,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                     ) : (
                                         <div className="flex h-40 w-40 flex-col items-center justify-center rounded-xl border border-dashed border-border text-xs text-muted-foreground">
                                             <QrCode className="mb-2 h-6 w-6" />
-                                            {t('payment_qr_wait')}
+                                            {bookingMutation.isPending ? t('payment_qr_loading') : t('payment_qr_wait')}
                                         </div>
                                     )}
                                 </div>
@@ -266,15 +295,41 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                         ? t('expires_in', { minutes: 15 })
                                         : t('payment_qr_expire')}
                                 </div>
-                                <Button
-                                    type="button"
-                                    disabled={!canConfirmPayment}
-                                    loading={paymentMutation.isPending}
-                                    onClick={() => bookingCode && paymentMutation.mutate(bookingCode)}
-                                >
-                                    {t('payment_qr_paid')}
-                                </Button>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button
+                                        type="button"
+                                        disabled={!canCheckPayment}
+                                        loading={paymentStatusMutation.isPending}
+                                        onClick={() => bookingCode && paymentStatusMutation.mutate(bookingCode)}
+                                    >
+                                        {t('payment_qr_paid')}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        disabled={isExpired || bookingMutation.isPending}
+                                        onClick={async () => {
+                                            setStatusMessage(null)
+                                            if (!bookedResult) {
+                                                try {
+                                                    await bookingMutation.mutateAsync()
+                                                } catch {
+                                                    return
+                                                }
+                                            }
+                                            setStatusMessage(t('payment_pay_later_saved'))
+                                        }}
+                                    >
+                                        {t('payment_pay_later')}
+                                    </Button>
+                                </div>
                             </div>
+
+                            {statusMessage && (
+                                <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                                    {statusMessage}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -386,16 +441,18 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                     </div>
 
                     <div className="space-y-3">
-                        <Button
-                            type="button"
-                            className="w-full"
-                            size="lg"
-                            disabled={!isReadyToBook}
-                            loading={bookingMutation.isPending}
-                            onClick={() => bookingMutation.mutate()}
-                        >
-                            {bookedResult ? t('payment_booked') : t('confirm_btn')} · {formatVnd(totalPrice)}
-                        </Button>
+                        {isPayOnBoard && (
+                            <Button
+                                type="button"
+                                className="w-full"
+                                size="lg"
+                                disabled={!isReadyToBook}
+                                loading={bookingMutation.isPending}
+                                onClick={() => bookingMutation.mutate()}
+                            >
+                                {bookedResult ? t('payment_booked') : t('confirm_btn')} · {formatVnd(totalPrice)}
+                            </Button>
+                        )}
                         <Button asChild variant="outline" className="w-full">
                             <Link to={APP_ROUTES.CUSTOMER.BOOKING(tripId)}>{t('back_btn')}</Link>
                         </Button>

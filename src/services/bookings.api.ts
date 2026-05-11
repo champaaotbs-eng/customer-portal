@@ -88,6 +88,22 @@ export async function confirmPayment(bookingCode: string) {
     })
 }
 
+export interface BookingPaymentStatus {
+    bookingCode: string
+    bookingStatus: string
+    paymentStatus: string | null
+    expiresAt: string | null
+    isExpired: boolean
+    isPaid: boolean
+}
+
+export async function checkBookingPaymentStatus(bookingCode: string) {
+    return request<BookingPaymentStatus>(
+        buildUrl(`/bookings/public/${encodeURIComponent(bookingCode)}/payment-status`),
+        { credentials: 'include' },
+    )
+}
+
 export default {
     createBooking,
     createCompanyBooking,
@@ -97,4 +113,5 @@ export default {
     listCompanyBookings,
     adminListBookings,
     confirmPayment,
+    checkBookingPaymentStatus,
 }
