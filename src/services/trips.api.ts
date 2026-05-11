@@ -74,7 +74,21 @@ export async function fetchTrips(params: {
         limit: String(params.limit ?? 100),
         page: String(params.page ?? 1),
     })
-    return request<TripListResponse>(`${buildUrl('/trips/search')}?${qs}`)
+    const data = await request<TripListResponse | ApiTrip[]>(`${buildUrl('/trips/search')}?${qs}`)
+    if (Array.isArray(data)) {
+        const totalItems = data.length
+        const limit = params.limit ?? 100
+        return {
+            result: data,
+            meta: {
+                page: params.page ?? 1,
+                limit,
+                totalPages: limit ? Math.ceil(totalItems / limit) : 1,
+                totalItems,
+            },
+        }
+    }
+    return data
 }
 
 export async function fetchTripById(id: string): Promise<ApiTrip> {
@@ -88,6 +102,7 @@ export interface CreateBookingPayload {
     dropoffStopId: string
     paymentMethod: 'ONLINE' | 'PAY_ON_BOARD'
     passengerName?: string
+    passengerEmail?: string
     passengerPhone?: string
 }
 
@@ -96,6 +111,7 @@ export interface BookingResult {
     bookingCode: string
     userId?: string
     passengerName?: string
+    passengerEmail?: string
     passengerPhone?: string
     tripId: string
     totalAmount: number

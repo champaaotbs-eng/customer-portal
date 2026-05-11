@@ -61,6 +61,8 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>((props, ref) => {
 
     const internalRef = React.useRef<HTMLInputElement>(null);
 
+    React.useImperativeHandle(ref, () => internalRef.current as HTMLInputElement);
+
     const [displayValue, setDisplayValue] = React.useState("");
     const [errors, setErrors] = React.useState<string[]>([]);
     const [fileName, setFileName] = React.useState("");
@@ -162,7 +164,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>((props, ref) => {
                     <button
                         type="button"
                         className="px-3 text-sm font-semibold"
-                        onClick={() => { if (ref && 'current' in ref) ref.current?.click(); }}
+                        onClick={() => internalRef.current?.click()}
                     >
                         {t("choose_file")}
                     </button>
@@ -172,7 +174,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>((props, ref) => {
                     <input
                         type="file"
                         hidden
-                        ref={ref}
+                        ref={internalRef}
                         onChange={(e) => {
                             const file = e.target.files?.[0] ?? null;
 

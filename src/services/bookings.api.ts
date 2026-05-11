@@ -13,7 +13,7 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         const err = new Error(body?.message || res.statusText)
-        ;(err as any).code = body?.code || body?.error || null
+            ; (err as any).code = body?.code || body?.error || null
         throw err
     }
     return (await res.json()) as T
@@ -26,6 +26,7 @@ interface CreateBookingDto {
     dropoffStopId: string
     paymentMethod: 'ONLINE' | 'PAY_ON_BOARD'
     passengerName?: string
+    passengerEmail?: string
     passengerPhone?: string
 }
 

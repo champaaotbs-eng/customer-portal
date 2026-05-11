@@ -8,5 +8,6 @@ export const APP_ROUTES = {
         SEARCH: '/customer/search',
         MY_TICKETS: '/customer/my-tickets',
         BOOKING: (tripId: string) => `/customer/booking/${tripId}`,
+        PAYMENT: (tripId: string) => `/customer/payment/${tripId}`,
     },
 } as const

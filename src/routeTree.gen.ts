@@ -16,6 +16,7 @@ import { Route as CustomerSearchRouteImport } from './routes/customer/search'
 import { Route as CustomerMyTicketsRouteImport } from './routes/customer/my-tickets'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
+import { Route as CustomerPaymentTripIdRouteImport } from './routes/customer/payment.$tripId'
 import { Route as CustomerBookingTripIdRouteImport } from './routes/customer/booking.$tripId'
 
 const CustomerRouteRoute = CustomerRouteRouteImport.update({
@@ -53,6 +54,11 @@ const AuthLoginRoute = AuthLoginRouteImport.update({
   path: '/auth/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CustomerPaymentTripIdRoute = CustomerPaymentTripIdRouteImport.update({
+  id: '/payment/$tripId',
+  path: '/payment/$tripId',
+  getParentRoute: () => CustomerRouteRoute,
+} as any)
 const CustomerBookingTripIdRoute = CustomerBookingTripIdRouteImport.update({
   id: '/booking/$tripId',
   path: '/booking/$tripId',
@@ -68,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/customer/search': typeof CustomerSearchRoute
   '/customer/': typeof CustomerIndexRoute
   '/customer/booking/$tripId': typeof CustomerBookingTripIdRoute
+  '/customer/payment/$tripId': typeof CustomerPaymentTripIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/customer/search': typeof CustomerSearchRoute
   '/customer': typeof CustomerIndexRoute
   '/customer/booking/$tripId': typeof CustomerBookingTripIdRoute
+  '/customer/payment/$tripId': typeof CustomerPaymentTripIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/customer/search': typeof CustomerSearchRoute
   '/customer/': typeof CustomerIndexRoute
   '/customer/booking/$tripId': typeof CustomerBookingTripIdRoute
+  '/customer/payment/$tripId': typeof CustomerPaymentTripIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/customer/search'
     | '/customer/'
     | '/customer/booking/$tripId'
+    | '/customer/payment/$tripId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/customer/search'
     | '/customer'
     | '/customer/booking/$tripId'
+    | '/customer/payment/$tripId'
   id:
     | '__root__'
     | '/'
@@ -119,6 +130,7 @@ export interface FileRouteTypes {
     | '/customer/search'
     | '/customer/'
     | '/customer/booking/$tripId'
+    | '/customer/payment/$tripId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -179,6 +191,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/customer/payment/$tripId': {
+      id: '/customer/payment/$tripId'
+      path: '/payment/$tripId'
+      fullPath: '/customer/payment/$tripId'
+      preLoaderRoute: typeof CustomerPaymentTripIdRouteImport
+      parentRoute: typeof CustomerRouteRoute
+    }
     '/customer/booking/$tripId': {
       id: '/customer/booking/$tripId'
       path: '/booking/$tripId'
@@ -194,6 +213,7 @@ interface CustomerRouteRouteChildren {
   CustomerSearchRoute: typeof CustomerSearchRoute
   CustomerIndexRoute: typeof CustomerIndexRoute
   CustomerBookingTripIdRoute: typeof CustomerBookingTripIdRoute
+  CustomerPaymentTripIdRoute: typeof CustomerPaymentTripIdRoute
 }
 
 const CustomerRouteRouteChildren: CustomerRouteRouteChildren = {
@@ -201,6 +221,7 @@ const CustomerRouteRouteChildren: CustomerRouteRouteChildren = {
   CustomerSearchRoute: CustomerSearchRoute,
   CustomerIndexRoute: CustomerIndexRoute,
   CustomerBookingTripIdRoute: CustomerBookingTripIdRoute,
+  CustomerPaymentTripIdRoute: CustomerPaymentTripIdRoute,
 }
 
 const CustomerRouteRouteWithChildren = CustomerRouteRoute._addFileChildren(
