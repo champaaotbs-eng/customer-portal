@@ -1,22 +1,7 @@
-const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+import { api } from '@/utils/axios.instance'
 
-function buildUrl(path: string) {
-    return BASE ? `${BASE}/api/v1${path}` : `/api/v1${path}`
-}
-
-function getAuthHeader(token?: string): Record<string, string> {
-    return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
-async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-    const res = await fetch(input, init)
-    if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        const err = new Error(body?.message || res.statusText)
-            ; (err as any).code = body?.code || body?.error || null
-        throw err
-    }
-    return (await res.json()) as T
+const unwrap = <T>(response: IResponse<T> | T): T => {
+    return (response as IResponse<T>)?.data ?? (response as T)
 }
 
 interface CreateBookingDto {
@@ -31,61 +16,65 @@ interface CreateBookingDto {
 }
 
 export async function createBooking(payload: CreateBookingDto, token?: string) {
-    return request(buildUrl('/bookings'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeader(token) },
-        body: JSON.stringify(payload),
-        credentials: 'include',
+    const response = await api.post<any>('/v1/bookings', payload, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        withCredentials: true,
     })
+    return unwrap(response)
 }
 
 export async function createCompanyBooking(payload: CreateBookingDto, companyId: string, token?: string) {
-    return request(buildUrl(`/company/bookings?companyId=${encodeURIComponent(companyId)}`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeader(token) },
-        body: JSON.stringify(payload),
-        credentials: 'include',
-    })
+    const response = await api.post<any>(
+        `/v1/company/bookings?companyId=${encodeURIComponent(companyId)}`,
+        payload,
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined, withCredentials: true },
+    )
+    return unwrap(response)
 }
 
 export async function listMyBookings(query = '', token?: string) {
-    const url = buildUrl(`/bookings/my${query ? `?${query}` : ''}`)
-    return request(url, { headers: getAuthHeader(token), credentials: 'include' })
+    const response = await api.get<any>(`/v1/bookings/my${query ? `?${query}` : ''}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        withCredentials: true,
+    })
+    return unwrap(response)
 }
 
 export async function getBookingByCode(code: string, token?: string) {
-    return request(buildUrl(`/bookings/${encodeURIComponent(code)}`), {
-        headers: getAuthHeader(token),
-        credentials: 'include',
+    const response = await api.get<any>(`/v1/bookings/${encodeURIComponent(code)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        withCredentials: true,
     })
+    return unwrap(response)
 }
 
 export async function cancelBooking(id: string, token?: string) {
-    return request(buildUrl(`/bookings/${encodeURIComponent(id)}/cancel`), {
-        method: 'PATCH',
-        headers: getAuthHeader(token),
-        credentials: 'include',
+    const response = await api.patch<any>(`/v1/bookings/${encodeURIComponent(id)}/cancel`, undefined, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        withCredentials: true,
     })
+    return unwrap(response)
 }
 
 export async function listCompanyBookings(companyId: string, query = '', token?: string) {
-    const url = buildUrl(`/company/bookings?companyId=${encodeURIComponent(companyId)}${query ? `&${query}` : ''}`)
-    return request(url, { headers: getAuthHeader(token), credentials: 'include' })
+    const response = await api.get<any>(
+        `/v1/company/bookings?companyId=${encodeURIComponent(companyId)}${query ? `&${query}` : ''}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined, withCredentials: true },
+    )
+    return unwrap(response)
 }
 
 export async function adminListBookings(query = '', token?: string) {
-    return request(buildUrl(`/admin/bookings${query ? `?${query}` : ''}`), {
-        headers: getAuthHeader(token),
-        credentials: 'include',
+    const response = await api.get<any>(`/v1/admin/bookings${query ? `?${query}` : ''}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        withCredentials: true,
     })
+    return unwrap(response)
 }
 
 export async function confirmPayment(bookingCode: string) {
-    return request(buildUrl('/bookings/webhook/payment'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bookingCode }),
-    })
+    const response = await api.post<any>('/v1/bookings/webhook/payment', { bookingCode })
+    return unwrap(response)
 }
 
 export interface BookingPaymentStatus {
@@ -98,10 +87,11 @@ export interface BookingPaymentStatus {
 }
 
 export async function checkBookingPaymentStatus(bookingCode: string) {
-    return request<BookingPaymentStatus>(
-        buildUrl(`/bookings/public/${encodeURIComponent(bookingCode)}/payment-status`),
-        { credentials: 'include' },
+    const response = await api.get<BookingPaymentStatus>(
+        `/v1/bookings/public/${encodeURIComponent(bookingCode)}/payment-status`,
+        { withCredentials: true },
     )
+    return unwrap(response)
 }
 
 export default {

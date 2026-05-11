@@ -1,19 +1,7 @@
-const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+import { api } from '@/utils/axios.instance'
 
-function buildUrl(path: string) {
-    return BASE ? `${BASE}/api/v1${path}` : `/api/v1${path}`
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, init)
-    if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        const err = new Error(body?.message || res.statusText)
-            ; (err as any).code = body?.code || null
-        throw err
-    }
-    const json = await res.json()
-    return (json?.data ?? json) as T
+const unwrap = <T>(response: IResponse<T> | T): T => {
+    return (response as IResponse<T>)?.data ?? (response as T)
 }
 
 export interface ApiTrip {
@@ -74,7 +62,8 @@ export async function fetchTrips(params: {
         limit: String(params.limit ?? 100),
         page: String(params.page ?? 1),
     })
-    const data = await request<TripListResponse | ApiTrip[]>(`${buildUrl('/trips/search')}?${qs}`)
+    const response = await api.get<TripListResponse | ApiTrip[]>(`/v1/trips/search?${qs.toString()}`)
+    const data = unwrap(response)
     if (Array.isArray(data)) {
         const totalItems = data.length
         const limit = params.limit ?? 100
@@ -92,7 +81,8 @@ export async function fetchTrips(params: {
 }
 
 export async function fetchTripById(id: string): Promise<ApiTrip> {
-    return request<ApiTrip>(buildUrl(`/trips/${encodeURIComponent(id)}`))
+    const response = await api.get<ApiTrip>(`/v1/trips/${encodeURIComponent(id)}`)
+    return unwrap(response)
 }
 
 export interface CreateBookingPayload {
@@ -126,12 +116,9 @@ export async function createBooking(
     payload: CreateBookingPayload,
     token?: string,
 ): Promise<BookingResult> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (token) headers['Authorization'] = `Bearer ${token}`
-    return request<BookingResult>(buildUrl('/bookings'), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-        credentials: 'include',
+    const response = await api.post<BookingResult>('/v1/bookings', payload, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        withCredentials: true,
     })
+    return unwrap(response)
 }

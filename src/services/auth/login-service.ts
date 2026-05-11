@@ -1,12 +1,7 @@
 import { setAuth } from 'store/auth.store'
 import type { ILogin } from 'types/auth/login'
 import type { User } from 'types/user/user'
-
-const BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-
-function buildUrl(path: string) {
-    return BASE ? `${BASE}/api/v1${path}` : `/api/v1${path}`
-}
+import { api } from '@/utils/axios.instance'
 
 export interface LoginResult {
     user?: User
@@ -15,18 +10,12 @@ export interface LoginResult {
 
 export const login = async (payload: ILogin): Promise<LoginResult> => {
     try {
-        const res = await fetch(buildUrl('/auth/user/login'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify(payload),
+        const response = await api.post<{ accessToken: string; user: any }>('/v1/auth/user/login', payload, {
+            withCredentials: true,
         })
-
-        const json = await res.json().catch(() => ({}))
-        const data = json?.data ?? json
-
-        if (!res.ok || !data?.accessToken) {
-            const msg = json?.message || data?.message || 'incorrect_credentials'
+        const data = response.data ?? (response as any)
+        if (!data?.accessToken) {
+            const msg = response.message || data?.message || 'incorrect_credentials'
             return { message: typeof msg === 'string' ? msg : 'incorrect_credentials' }
         }
 
