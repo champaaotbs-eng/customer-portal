@@ -1,4 +1,4 @@
 export interface ILogin {
-    phone: string;
-    password: string;
+    email: string;
+    otp: string;
 }

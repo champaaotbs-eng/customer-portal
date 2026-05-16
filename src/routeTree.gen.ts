@@ -15,6 +15,7 @@ import { Route as CustomerIndexRouteImport } from './routes/customer/index'
 import { Route as CustomerSearchRouteImport } from './routes/customer/search'
 import { Route as CustomerMyTicketsRouteImport } from './routes/customer/my-tickets'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
+import { Route as AuthLoginVerifyRouteImport } from './routes/auth/login-verify'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as CustomerPaymentTripIdRouteImport } from './routes/customer/payment.$tripId'
 import { Route as CustomerBookingTripIdRouteImport } from './routes/customer/booking.$tripId'
@@ -49,6 +50,11 @@ const AuthRegisterRoute = AuthRegisterRouteImport.update({
   path: '/auth/register',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthLoginVerifyRoute = AuthLoginVerifyRouteImport.update({
+  id: '/auth/login-verify',
+  path: '/auth/login-verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthLoginRoute = AuthLoginRouteImport.update({
   id: '/auth/login',
   path: '/auth/login',
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/customer': typeof CustomerRouteRouteWithChildren
   '/auth/login': typeof AuthLoginRoute
+  '/auth/login-verify': typeof AuthLoginVerifyRoute
   '/auth/register': typeof AuthRegisterRoute
   '/customer/my-tickets': typeof CustomerMyTicketsRoute
   '/customer/search': typeof CustomerSearchRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth/login': typeof AuthLoginRoute
+  '/auth/login-verify': typeof AuthLoginVerifyRoute
   '/auth/register': typeof AuthRegisterRoute
   '/customer/my-tickets': typeof CustomerMyTicketsRoute
   '/customer/search': typeof CustomerSearchRoute
@@ -91,6 +99,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/customer': typeof CustomerRouteRouteWithChildren
   '/auth/login': typeof AuthLoginRoute
+  '/auth/login-verify': typeof AuthLoginVerifyRoute
   '/auth/register': typeof AuthRegisterRoute
   '/customer/my-tickets': typeof CustomerMyTicketsRoute
   '/customer/search': typeof CustomerSearchRoute
@@ -104,6 +113,7 @@ export interface FileRouteTypes {
     | '/'
     | '/customer'
     | '/auth/login'
+    | '/auth/login-verify'
     | '/auth/register'
     | '/customer/my-tickets'
     | '/customer/search'
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth/login'
+    | '/auth/login-verify'
     | '/auth/register'
     | '/customer/my-tickets'
     | '/customer/search'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/customer'
     | '/auth/login'
+    | '/auth/login-verify'
     | '/auth/register'
     | '/customer/my-tickets'
     | '/customer/search'
@@ -137,6 +149,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CustomerRouteRoute: typeof CustomerRouteRouteWithChildren
   AuthLoginRoute: typeof AuthLoginRoute
+  AuthLoginVerifyRoute: typeof AuthLoginVerifyRoute
   AuthRegisterRoute: typeof AuthRegisterRoute
 }
 
@@ -182,6 +195,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/register'
       fullPath: '/auth/register'
       preLoaderRoute: typeof AuthRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/login-verify': {
+      id: '/auth/login-verify'
+      path: '/auth/login-verify'
+      fullPath: '/auth/login-verify'
+      preLoaderRoute: typeof AuthLoginVerifyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/login': {
@@ -232,6 +252,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CustomerRouteRoute: CustomerRouteRouteWithChildren,
   AuthLoginRoute: AuthLoginRoute,
+  AuthLoginVerifyRoute: AuthLoginVerifyRoute,
   AuthRegisterRoute: AuthRegisterRoute,
 }
 export const routeTree = rootRouteImport

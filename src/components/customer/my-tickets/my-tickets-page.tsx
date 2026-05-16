@@ -268,9 +268,9 @@ export function MyTicketsPage() {
                     <p className="mt-1 text-sm text-muted-foreground">Please log in to view your tickets</p>
                 </div>
                 <Button asChild>
-                    <Link to={APP_ROUTES.CUSTOMER.SEARCH}>
+                    <Link to={APP_ROUTES.LOGIN}>
                         <Search className="mr-2 h-4 w-4" />
-                        {t('search_link')}
+                        {tCommon('nav.login')}
                     </Link>
                 </Button>
             </div>

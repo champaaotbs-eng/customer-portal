@@ -5,10 +5,14 @@ import { Bus as BusIcon, CreditCard, Wallet, QrCode, CheckCircle2, MapPin, Arrow
 import { fetchTripById, createBooking, type ApiSeat, type BookingResult } from '@/services/trips.api'
 import { checkBookingPaymentStatus } from '@/services/bookings.api'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { formatDate, formatTime, formatVnd } from '@/utils/format'
 import { APP_ROUTES } from '@/constants/app-routes'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/auth.store'
+import { resolveOrCreateWithEmailOtp, sendCustomerEmailOtp } from '@/services/auth/customer-auth.api'
+import { isAuthError } from '@/services/auth.service'
 
 type PaymentMethod = 'ONLINE' | 'PAY_ON_BOARD'
 
@@ -61,6 +65,7 @@ function StepIndicator({ step, labels }: { step: number; labels: string[] }) {
 export function PaymentPage({ tripId, search }: { tripId: string; search: PaymentSearch }) {
     const { t } = useTranslation('translation', { keyPrefix: 'pages.booking' })
     const { t: tCommon } = useTranslation()
+    const { accessToken } = useAuthStore()
 
     const seatIdList = useMemo(() => search.seatIds.split(',').map(s => s.trim()).filter(Boolean), [search.seatIds])
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ONLINE')
@@ -68,6 +73,11 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     const [paymentConfirmed, setPaymentConfirmed] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
     const [isExpired, setIsExpired] = useState(false)
+    const [otp, setOtp] = useState('')
+    const [authResolutionError, setAuthResolutionError] = useState<string | null>(null)
+    const [authResolutionRequired, setAuthResolutionRequired] = useState<string | null>(null)
+    const [otpRequested, setOtpRequested] = useState(false)
+    const [retryAfterAuth, setRetryAfterAuth] = useState(false)
     const autoBookingRef = useRef(false)
 
     const { data: trip, isLoading } = useQuery({
@@ -87,18 +97,49 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
             passengerName: search.passengerName || undefined,
             passengerEmail: search.passengerEmail || undefined,
             passengerPhone: search.passengerPhone || undefined,
-        }),
+        }, accessToken ?? undefined),
         onSuccess: (result) => {
             setBookedResult(result)
             setStatusMessage(null)
+            setAuthResolutionRequired(null)
+            setAuthResolutionError(null)
         },
         onError: (err: any) => {
             autoBookingRef.current = false
-            if (/seats_already_booked/i.test(String(err?.message || err?.code || ''))) {
+            const errorKey = String(err?.response?.data?.message || err?.message || err?.code || '')
+            if (/seats_already_booked/i.test(errorKey)) {
                 alert(t('error_seats_already_booked'))
+            } else if (
+                errorKey === 'email_already_registered_login_required' ||
+                errorKey === 'booking_email_mismatch_requires_reauth'
+            ) {
+                setAuthResolutionRequired(errorKey)
+                setAuthResolutionError(null)
             } else {
-                alert(err?.message || tCommon('common.error'))
+                alert(err?.localizedMessage || err?.message || tCommon('common.error'))
             }
+        },
+    })
+
+    const resolveEmailAuthMutation = useMutation({
+        mutationFn: () => resolveOrCreateWithEmailOtp({
+            phone: search.passengerPhone,
+            otp: otp.trim(),
+            email: search.passengerEmail,
+            fullName: search.passengerName || search.passengerEmail,
+        }),
+        onSuccess: (result) => {
+            if (isAuthError(result)) {
+                setAuthResolutionError(result.message)
+                return
+            }
+
+            setAuthResolutionRequired(null)
+            setAuthResolutionError(null)
+            setRetryAfterAuth(true)
+        },
+        onError: (err: any) => {
+            setAuthResolutionError(err?.localizedMessage || err?.message || tCommon('common.error'))
         },
     })
 
@@ -135,6 +176,13 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
             setIsExpired(true)
         }
     }, [bookedResult?.expiresAt])
+
+    useEffect(() => {
+        if (!retryAfterAuth || !accessToken) return
+        setRetryAfterAuth(false)
+        autoBookingRef.current = false
+        bookingMutation.mutate()
+    }, [retryAfterAuth, accessToken, bookingMutation])
 
     if (isLoading) {
         return (
@@ -329,6 +377,78 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                 <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                                     {statusMessage}
                                 </div>
+                            )}
+                        </div>
+                    )}
+
+                    {authResolutionRequired && (
+                        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 space-y-4">
+                            <div>
+                                <p className="text-sm font-semibold text-amber-900">
+                                    {authResolutionRequired === 'booking_email_mismatch_requires_reauth'
+                                        ? t('reauth_title', { defaultValue: 'Verify the new email to continue' })
+                                        : t('login_required_title', { defaultValue: 'Login required for this email address' })}
+                                </p>
+                                <p className="text-xs text-amber-800">
+                                    {t('email_auth_required_desc', {
+                                        defaultValue: 'This email address already has an account or does not match the current session. Verify it with OTP to continue booking.',
+                                    })}
+                                </p>
+                            </div>
+
+                            <Input
+                                label={t('passenger_email')}
+                                value={search.passengerEmail}
+                                disabled
+                            />
+
+                            <div className="flex gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={async () => {
+                                        const result = await sendCustomerEmailOtp(search.passengerEmail)
+                                        if (result.message) {
+                                            setAuthResolutionError(result.message)
+                                            return
+                                        }
+
+                                        setOtpRequested(true)
+                                        setAuthResolutionError(t('otp_sent', { defaultValue: 'OTP sent to your email.' }))
+                                    }}
+                                >
+                                    {t('send_otp', { defaultValue: 'Send OTP' })}
+                                </Button>
+                            </div>
+
+                            {otpRequested && (
+                                <Input
+                                    label={t('otp_label', { defaultValue: 'OTP code' })}
+                                    value={otp}
+                                    onChange={(e) => setOtp(e.target.value)}
+                                    placeholder={t('otp_placeholder', { defaultValue: 'Enter the 6-digit code' })}
+                                />
+                            )}
+
+                            {authResolutionError && (
+                                <p className="text-xs text-amber-900">{authResolutionError}</p>
+                            )}
+
+                            {otpRequested && (
+                                <Button
+                                    type="button"
+                                    loading={resolveEmailAuthMutation.isPending}
+                                    onClick={() => {
+                                        if (!otp.trim()) {
+                                            setAuthResolutionError(t('otp_required', { defaultValue: 'Enter the OTP to continue.' }))
+                                            return
+                                        }
+
+                                        resolveEmailAuthMutation.mutate()
+                                    }}
+                                >
+                                    {t('verify_otp', { defaultValue: 'Verify OTP' })}
+                                </Button>
                             )}
                         </div>
                     )}

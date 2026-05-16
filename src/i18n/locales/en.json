@@ -190,22 +190,21 @@
         },
         "login": {
             "title": "Login",
-            "phone_label": "Phone number",
-            "phone_placeholder": "0912345678",
+            "email_label": "Email",
+            "email_placeholder": "you@example.com",
             "password_label": "Password",
             "password_placeholder": "••••••••",
             "login_btn": "Login",
             "no_account": "Don't have an account?",
             "register_here": "Register now",
-            "invalid_credentials": "Invalid phone number or password",
+            "invalid_credentials": "Invalid email or password",
             "errors": {
-                "phone_required": "Phone number is required",
-                "phone_invalid": "Invalid phone number format",
+                "email_required": "Email is required",
+                "invalid_email": "Invalid email format",
                 "password_required": "Password is required",
                 "password_min_length": "Password must be at least 6 characters",
-                "invalid_phone": "Invalid phone number format",
                 "invalid_password": "Invalid password format",
-                "incorrect_credentials": "Incorrect phone number or password"
+                "incorrect_credentials": "Incorrect email or password"
             }
         },
         "register": {

@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { UserPlus } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -9,34 +10,40 @@ import { APP_ROUTES } from '@/constants/app-routes'
 import { useTranslation } from 'react-i18next'
 import type { IRegister } from 'types/auth/register'
 import { register } from 'services/auth/register-service'
+import { sendCustomerEmailOtp } from '@/services/auth/customer-auth.api'
 
 export function RegisterPage() {
     const navigate = useNavigate()
     const { t } = useTranslation('translation', { keyPrefix: 'pages.register' })
-    const { t: tV } = useTranslation('translation', { keyPrefix: 'validations' })
+    const [otpRequested, setOtpRequested] = useState(false)
+    const [otp, setOtp] = useState('')
+    const [otpMessage, setOtpMessage] = useState<string | null>(null)
 
     const {
         register: reg,
         handleSubmit,
         setError,
+        watch,
         formState: { errors },
     } = useForm<IRegister>({
         defaultValues: {
-            name: '',
+            fullName: '',
             email: '',
             phone: '',
-            password: '',
-            confirm: '',
-            role: 'customer',
+            otp: '',
         },
     })
+    const watchedEmail = watch('email')
+
+    useEffect(() => {
+        setOtpRequested(false)
+        setOtp('')
+        setOtpMessage(null)
+    }, [watchedEmail])
 
 
     const registerMutation = useMutation({
-        mutationFn: (data: IRegister) => {
-            const { confirm: _confirm, ...payload } = data
-            return register({ ...payload, role: 'customer' })
-        },
+        mutationFn: (data: IRegister) => register(data),
         onSuccess: (result) => {
             if (isAuthError(result)) {
                 setError('root', { message: result.message })
@@ -47,20 +54,27 @@ export function RegisterPage() {
     })
 
     function onSubmit(data: IRegister) {
-        if (data.password !== data.confirm) {
-            setError('confirm', { message: tV('password_mismatch') })
+        if (!otp.trim()) {
+            setError('root', { message: t('otp_required', { defaultValue: 'Verify your email before registering.' }) })
             return
         }
-        if (data.password.length < 6) {
-            setError('password', { message: tV('password_min_length', { min: 6 }) })
-            return
-        }
-        registerMutation.mutate(data)
+        registerMutation.mutate({ ...data, otp: otp.trim() })
     }
 
     const serverError = registerMutation.data && isAuthError(registerMutation.data)
         ? registerMutation.data.message
         : errors.root?.message
+
+    async function handleSendOtp() {
+        const result = await sendCustomerEmailOtp(watchedEmail)
+        if (result.message) {
+            setOtpMessage(result.message)
+            return
+        }
+
+        setOtpRequested(true)
+        setOtpMessage(t('otp_sent', { defaultValue: 'OTP sent to your email.' }))
+    }
 
     return (
         <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center bg-muted/30 px-4">
@@ -79,7 +93,7 @@ export function RegisterPage() {
                         label={t('full_name_label')}
                         placeholder={t('full_name_placeholder')}
                         required
-                        {...reg('name')}
+                        {...reg('fullName')}
                     />
                     <Input
                         label={t('email_label')}
@@ -95,30 +109,25 @@ export function RegisterPage() {
                         placeholder={t('phone_placeholder')}
                         {...reg('phone')}
                     />
-                    <Input
-                        label={t('password_label')}
-                        type="password"
-                        placeholder={t('password_placeholder')}
-                        autoComplete="new-password"
-                        required
-                        {...reg('password')}
-                    />
-                    <div>
-                        <Input
-                            label={t('confirm_password_label')}
-                            type="password"
-                            placeholder={t('confirm_password_placeholder')}
-                            autoComplete="new-password"
-                            required
-                            {...reg('confirm')}
-                        />
-                        {errors.confirm && (
-                            <p className="mt-1 text-xs text-destructive">{errors.confirm.message}</p>
-                        )}
-                        {errors.password && (
-                            <p className="mt-1 text-xs text-destructive">{errors.password.message}</p>
-                        )}
+
+                    <div className="flex gap-2">
+                        <Button type="button" variant="outline" className="w-full" onClick={handleSendOtp}>
+                            {t('send_otp', { defaultValue: 'Send OTP' })}
+                        </Button>
                     </div>
+
+                    {otpRequested && (
+                        <Input
+                            label={t('otp_label', { defaultValue: 'OTP code' })}
+                            placeholder={t('otp_placeholder', { defaultValue: 'Enter the 6-digit code' })}
+                            value={otp}
+                            onChange={(e) => setOtp(e.target.value)}
+                        />
+                    )}
+
+                    {otpMessage && (
+                        <p className="text-xs text-muted-foreground">{otpMessage}</p>
+                    )}
 
                     {serverError && (
                         <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">

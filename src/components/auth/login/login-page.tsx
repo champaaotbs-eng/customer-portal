@@ -1,16 +1,13 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useForm, Controller } from 'react-hook-form'
-import { useMutation } from '@tanstack/react-query'
 import { AlertCircle, LogIn as LoginIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { isAuthError, type LoginPayload } from '@/services/auth.service'
 import { APP_ROUTES } from '@/constants/app-routes'
 import { useTranslation } from 'react-i18next'
 import { loginValidationSchema } from './validation-schema'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { login } from 'services/auth/login-service'
-import type { ILogin } from 'types/auth/login'
+import { sendLoginEmailOtp } from '@/services/auth/customer-auth.api'
 
 export function LoginPage() {
     const navigate = useNavigate()
@@ -18,27 +15,30 @@ export function LoginPage() {
 
     const schema = loginValidationSchema(t)
 
-    const { control, handleSubmit, formState: { errors } } = useForm<ILogin>({
+    const { control, handleSubmit, getValues, setError, clearErrors, formState: { errors, isSubmitting } } = useForm<{ email: string }>({
         resolver: zodResolver(schema),
         defaultValues: {
-            phone: '',
-            password: ''
+            email: '',
         },
         mode: 'onChange',
         reValidateMode: 'onChange',
     })
 
-    const loginMutation = useMutation({
-        mutationFn: login,
-        onSuccess: (result) => {
-            if (isAuthError(result)) return
-            navigate({ to: APP_ROUTES.CUSTOMER.ROOT })
-        },
-    })
+    async function onSubmit() {
+        clearErrors('root')
+        const result = await sendLoginEmailOtp(getValues('email'))
+        if (result.message) {
+            setError('root', { message: result.message })
+            return
+        }
 
-    const errorMessage = loginMutation.data && isAuthError(loginMutation.data)
-        ? loginMutation.data.message
-        : null
+        navigate({
+            to: APP_ROUTES.LOGIN_VERIFY,
+            search: {
+                email: getValues('email'),
+            },
+        })
+    }
 
     return (
         <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center bg-muted/30 px-4">
@@ -52,56 +52,35 @@ export function LoginPage() {
                     <h1 className="text-2xl font-semibold">{t('title')}</h1>
                 </div>
 
-                <form onSubmit={handleSubmit((data) => loginMutation.mutate(data))} className="flex flex-col gap-4">
+                <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
                     <Controller
-                        name="phone"
+                        name="email"
                         control={control}
                         render={({ field }) => (
                             <Input
                                 {...field}
-                                label={t('phone_label')}
-                                type="tel"
-                                placeholder={t('phone_placeholder')}
-                                autoComplete="tel"
+                                label={t('email_label', { defaultValue: 'Email' })}
+                                type="email"
+                                placeholder={t('email_placeholder', { defaultValue: 'you@example.com' })}
+                                autoComplete="email"
                             />
                         )}
                     />
-                    {errors.phone && (
+                    {errors.email && (
                         <p className="text-red-500 text-xs flex items-center">
                             <AlertCircle className="h-3 w-3 mr-1" />
-                            {errors.phone.message}
+                            {errors.email.message}
+                        </p>
+                    )}
+                    {errors.root?.message && (
+                        <p className="text-red-500 text-xs flex items-center">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            {errors.root.message}
                         </p>
                     )}
 
-                    <Controller
-                        name="password"
-                        control={control}
-                        render={({ field }) => (
-                            <Input
-                                {...field}
-                                label={t('password_label')}
-                                type="password"
-                                placeholder={t('password_placeholder')}
-                                autoComplete="current-password"
-                            />
-                        )}
-                    />
-                    {errors.password && (
-                        <p className="text-red-500 text-xs flex items-center">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            {errors.password.message}
-                        </p>
-                    )}
-
-                    {errorMessage && (
-                        <p className="text-red-500 text-xs flex items-center">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            {errorMessage}
-                        </p>
-                    )}
-
-                    <Button type="submit" loading={loginMutation.isPending} className="mt-2 w-full">
-                        {t('login_btn')}
+                    <Button type="submit" loading={isSubmitting} className="mt-2 w-full">
+                        {t('send_otp', { defaultValue: 'Send OTP' })}
                     </Button>
                 </form>
 

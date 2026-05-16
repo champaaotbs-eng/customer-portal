@@ -38,6 +38,10 @@ const resolveLocalizedMessage = (error: any) => {
         return i18n.t(`errors.${key}`)
     }
 
+    if (key) {
+        return key
+    }
+
     if (status === 401) {
         return i18n.t('errors.unauthorized')
     }
@@ -83,8 +87,8 @@ instance.interceptors.response.use(
             } catch {
                 if (isCustomerRoute) {
                     // logoutCustomer()
-                    if (typeof window !== 'undefined' && window.location.pathname !== '/customer/login') {
-                        window.location.assign('/customer/login')
+                    if (typeof window !== 'undefined' && window.location.pathname !== '/auth/login') {
+                        window.location.assign('/auth/login')
                     }
                 } else {
                     logout()

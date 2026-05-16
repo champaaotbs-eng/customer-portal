@@ -190,22 +190,21 @@
         },
         "login": {
             "title": "Đăng nhập",
-            "phone_label": "Số điện thoại",
-            "phone_placeholder": "0912345678",
+            "email_label": "Email",
+            "email_placeholder": "ten@example.com",
             "password_label": "Mật khẩu",
             "password_placeholder": "••••••••",
             "login_btn": "Đăng nhập",
             "no_account": "Chưa có tài khoản?",
             "register_here": "Đăng ký ngay",
-            "invalid_credentials": "Số điện thoại hoặc mật khẩu không đúng",
+            "invalid_credentials": "Email hoặc mật khẩu không đúng",
             "errors": {
-                "phone_required": "Vui lòng nhập số điện thoại",
-                "phone_invalid": "Số điện thoại không đúng định dạng",
+                "email_required": "Vui lòng nhập email",
+                "invalid_email": "Email không đúng định dạng",
                 "password_required": "Vui lòng nhập mật khẩu",
                 "password_min_length": "Mật khẩu phải có ít nhất 6 ký tự",
-                "invalid_phone": "Số điện thoại không đúng định dạng",
                 "invalid_password": "Mật khẩu không đúng định dạng",
-                "incorrect_credentials": "Incorrect phone number or password"
+                "incorrect_credentials": "Email hoặc mật khẩu không đúng"
             }
         },
         "register": {

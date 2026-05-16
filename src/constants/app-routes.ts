@@ -1,6 +1,7 @@
 export const APP_ROUTES = {
     HOME: '/',
     LOGIN: '/auth/login',
+    LOGIN_VERIFY: '/auth/login-verify',
     REGISTER: '/auth/register',
 
     CUSTOMER: {
