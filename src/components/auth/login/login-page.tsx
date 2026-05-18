@@ -26,16 +26,23 @@ export function LoginPage() {
 
     async function onSubmit() {
         clearErrors('root')
-        const result = await sendLoginEmailOtp(getValues('email'))
+        const email = getValues('email').trim().toLowerCase()
+        const result = await sendLoginEmailOtp(email)
         if (result.message) {
             setError('root', { message: result.message })
             return
         }
+        if (!result.sent) {
+            setError('root', { message: t('otp_send_failed', { defaultValue: 'Failed to send OTP to this email address.' }) })
+            return
+        }
+
+        window.sessionStorage.setItem('pendingLoginOtpEmail', email)
 
         navigate({
             to: APP_ROUTES.LOGIN_VERIFY,
             search: {
-                email: getValues('email'),
+                email,
             },
         })
     }
@@ -59,6 +66,10 @@ export function LoginPage() {
                         render={({ field }) => (
                             <Input
                                 {...field}
+                                onChange={(event) => {
+                                    field.onChange(event)
+                                    clearErrors('root')
+                                }}
                                 label={t('email_label', { defaultValue: 'Email' })}
                                 type="email"
                                 placeholder={t('email_placeholder', { defaultValue: 'you@example.com' })}

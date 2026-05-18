@@ -23,7 +23,7 @@ export interface ApiTrip {
 
 export interface ApiTripStop {
     tripStopId: string
-    stopType: 'PICKUP' | 'DROPOFF' | 'BOTH'
+    stopType: 'PICKUP' | 'DROPOFF'
     locationId?: string
     locationName?: string
     locationAddress?: string

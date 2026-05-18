@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Bus as BusIcon, CreditCard, Wallet, QrCode, CheckCircle2, MapPin, ArrowRight } from 'lucide-react'
 import { fetchTripById, createBooking, type ApiSeat, type BookingResult } from '@/services/trips.api'
 import { checkBookingPaymentStatus } from '@/services/bookings.api'
+import { generateVietQrDataUrl } from '@/services/vietqr.api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatDate, formatTime, formatVnd } from '@/utils/format'
@@ -78,7 +79,11 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     const [authResolutionRequired, setAuthResolutionRequired] = useState<string | null>(null)
     const [otpRequested, setOtpRequested] = useState(false)
     const [retryAfterAuth, setRetryAfterAuth] = useState(false)
-    const autoBookingRef = useRef(false)
+    const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+    const [qrError, setQrError] = useState<string | null>(null)
+    function clearAuthResolutionError() {
+        setAuthResolutionError(null)
+    }
 
     const { data: trip, isLoading } = useQuery({
         queryKey: ['public-trip', tripId],
@@ -101,11 +106,12 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
         onSuccess: (result) => {
             setBookedResult(result)
             setStatusMessage(null)
+            setIsExpired(false)
+            setPaymentConfirmed(result.status === 'CONFIRMED' || result.status === 'COMPLETED')
             setAuthResolutionRequired(null)
             setAuthResolutionError(null)
         },
         onError: (err: any) => {
-            autoBookingRef.current = false
             const errorKey = String(err?.response?.data?.message || err?.message || err?.code || '')
             if (/seats_already_booked/i.test(errorKey)) {
                 alert(t('error_seats_already_booked'))
@@ -149,6 +155,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
             if (result.isPaid) {
                 setPaymentConfirmed(true)
                 setStatusMessage(null)
+                setBookedResult((current) => current ? { ...current, status: result.bookingStatus, expiresAt: result.expiresAt ?? current.expiresAt } : current)
                 return
             }
             if (result.isExpired) {
@@ -164,13 +171,6 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     })
 
     useEffect(() => {
-        if (paymentMethod !== 'ONLINE') return
-        if (bookedResult || bookingMutation.isPending || autoBookingRef.current) return
-        autoBookingRef.current = true
-        bookingMutation.mutate()
-    }, [paymentMethod, bookedResult, bookingMutation.isPending, bookingMutation.mutate])
-
-    useEffect(() => {
         if (!bookedResult?.expiresAt) return
         if (Date.now() > new Date(bookedResult.expiresAt).getTime()) {
             setIsExpired(true)
@@ -180,9 +180,83 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     useEffect(() => {
         if (!retryAfterAuth || !accessToken) return
         setRetryAfterAuth(false)
-        autoBookingRef.current = false
         bookingMutation.mutate()
     }, [retryAfterAuth, accessToken, bookingMutation])
+
+    const seats: ApiSeat[] = trip?.seatAvailability ?? []
+    const selectedSeats = seats.filter(s => seatIdList.includes(s.seatId))
+    const totalPrice = selectedSeats.reduce((sum, s) => sum + s.price, 0)
+    const bookingCode = bookedResult?.bookingCode ?? bookedResult?.id?.slice(0, 8).toUpperCase() ?? ''
+    const qrBookingCode = bookedResult?.bookingCode ?? ''
+    const pickupStop = (trip?.tripStops ?? []).find(s => s.tripStopId === search.pickupStopId)
+    const dropoffStop = (trip?.tripStops ?? []).find(s => s.tripStopId === search.dropoffStopId)
+    const stepLabels = [t('step_seat'), t('step_info'), t('step_payment')]
+
+    const vietQrConfig = useMemo(() => {
+        return {
+            bankBin: String(import.meta.env.VITE_PAYMENT_BANK_BIN ?? '').trim(),
+            accountNumber: String(import.meta.env.VITE_PAYMENT_ACCOUNT ?? '').trim(),
+            accountName: String(import.meta.env.VITE_PAYMENT_ACCOUNT_NAME ?? 'NO NAME').trim(),
+        }
+    }, [])
+
+    useEffect(() => {
+        if (paymentMethod !== 'ONLINE') {
+            setQrDataUrl(null)
+            setQrError(null)
+            return
+        }
+
+        if (!qrBookingCode) {
+            setQrDataUrl(null)
+            setQrError(null)
+            return
+        }
+
+        if (!vietQrConfig.bankBin || !vietQrConfig.accountNumber) {
+            setQrDataUrl(null)
+            setQrError(t('payment_qr_config_missing', { defaultValue: 'Payment QR config missing.' }))
+            return
+        }
+
+        const amount = Number(bookedResult?.totalAmount ?? totalPrice)
+        if (!Number.isFinite(amount) || amount <= 0) {
+            setQrDataUrl(null)
+            setQrError(t('payment_qr_invalid_amount', { defaultValue: 'Invalid payment amount.' }))
+            return
+        }
+
+        const controller = new AbortController()
+        setQrDataUrl(null)
+        setQrError(null)
+        generateVietQrDataUrl({
+            accountNo: vietQrConfig.accountNumber,
+            accountName: vietQrConfig.accountName || 'NO NAME',
+            acqId: vietQrConfig.bankBin,
+            amount: Math.round(amount),
+            addInfo: qrBookingCode,
+            signal: controller.signal,
+        })
+            .then((qrUrl) => {
+                setQrDataUrl(qrUrl)
+            })
+            .catch((error: unknown) => {
+                if (controller.signal.aborted) return
+                setQrDataUrl(null)
+                console.error('Failed to generate VietQR code', error)
+                setQrError(t('payment_qr_failed', { defaultValue: 'Unable to generate QR code.' }))
+            })
+
+        return () => {
+            controller.abort()
+        }
+    }, [bookedResult?.totalAmount, paymentMethod, qrBookingCode, t, totalPrice, vietQrConfig])
+
+    useEffect(() => {
+        if (paymentMethod !== 'ONLINE') return
+        if (bookedResult || bookingMutation.isPending) return
+        bookingMutation.mutate()
+    }, [bookedResult, bookingMutation, paymentMethod])
 
     if (isLoading) {
         return (
@@ -207,17 +281,8 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
         )
     }
 
-    const seats: ApiSeat[] = trip.seatAvailability ?? []
-    const selectedSeats = seats.filter(s => seatIdList.includes(s.seatId))
-    const totalPrice = selectedSeats.reduce((sum, s) => sum + (trip.basePrice + s.price), 0)
-    const bookingCode = bookedResult?.bookingCode ?? bookedResult?.id?.slice(0, 8).toUpperCase() ?? ''
-    const pickupStop = (trip.tripStops ?? []).find(s => s.tripStopId === search.pickupStopId)
-    const dropoffStop = (trip.tripStops ?? []).find(s => s.tripStopId === search.dropoffStopId)
-    const stepLabels = [t('step_seat'), t('step_info'), t('step_payment')]
-
-    const canCheckPayment = paymentMethod === 'ONLINE' && bookingCode && !paymentConfirmed && !isExpired
+    const canCheckPayment = paymentMethod === 'ONLINE' && !!bookingCode && !paymentConfirmed && !isExpired
     const isPayOnBoard = paymentMethod === 'PAY_ON_BOARD'
-    const isReadyToBook = isPayOnBoard && !bookedResult && seatIdList.length > 0
 
     return (
         <div className="space-y-6">
@@ -315,12 +380,19 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                 </div>
 
                                 <div className="flex items-center justify-center rounded-2xl border border-border bg-background p-3">
-                                    {bookingCode ? (
-                                        <img
-                                            src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(`BOOKING_CODE:${bookingCode}`)}&size=180x180&margin=10`}
-                                            alt={`QR code for booking ${bookingCode}`}
-                                            className="h-40 w-40 rounded-xl border border-border"
-                                        />
+                                    {qrBookingCode ? (
+                                        qrDataUrl ? (
+                                            <img
+                                                src={qrDataUrl}
+                                                alt={`QR code for payment ${qrBookingCode}`}
+                                                className="h-40 w-40 rounded-xl border border-border"
+                                            />
+                                        ) : (
+                                            <div className="flex h-40 w-40 flex-col items-center justify-center rounded-xl border border-dashed border-border text-xs text-muted-foreground">
+                                                <QrCode className="mb-2 h-6 w-6" />
+                                                {qrError ?? t('payment_qr_loading')}
+                                            </div>
+                                        )
                                     ) : (
                                         <div className="flex h-40 w-40 flex-col items-center justify-center rounded-xl border border-dashed border-border text-xs text-muted-foreground">
                                             <QrCode className="mb-2 h-6 w-6" />
@@ -330,9 +402,9 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                 </div>
                             </div>
 
-                            {bookingCode && (
+                            {qrBookingCode && (
                                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
-                                    <span className="font-mono text-xs text-muted-foreground">#{bookingCode}</span>
+                                    <span className="font-mono text-xs text-muted-foreground">#{qrBookingCode}</span>
                                     <span className="font-semibold text-primary">{formatVnd(bookedResult?.totalAmount ?? totalPrice)}</span>
                                 </div>
                             )}
@@ -351,24 +423,6 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                         onClick={() => bookingCode && paymentStatusMutation.mutate(bookingCode)}
                                     >
                                         {t('payment_qr_paid')}
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        disabled={isExpired || bookingMutation.isPending}
-                                        onClick={async () => {
-                                            setStatusMessage(null)
-                                            if (!bookedResult) {
-                                                try {
-                                                    await bookingMutation.mutateAsync()
-                                                } catch {
-                                                    return
-                                                }
-                                            }
-                                            setStatusMessage(t('payment_pay_later_saved'))
-                                        }}
-                                    >
-                                        {t('payment_pay_later')}
                                     </Button>
                                 </div>
                             </div>
@@ -407,6 +461,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                     type="button"
                                     variant="outline"
                                     onClick={async () => {
+                                        clearAuthResolutionError()
                                         const result = await sendCustomerEmailOtp(search.passengerEmail)
                                         if (result.message) {
                                             setAuthResolutionError(result.message)
@@ -425,7 +480,10 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                 <Input
                                     label={t('otp_label', { defaultValue: 'OTP code' })}
                                     value={otp}
-                                    onChange={(e) => setOtp(e.target.value)}
+                                    onChange={(e) => {
+                                        setOtp(e.target.value)
+                                        clearAuthResolutionError()
+                                    }}
                                     placeholder={t('otp_placeholder', { defaultValue: 'Enter the 6-digit code' })}
                                 />
                             )}
@@ -444,6 +502,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                             return
                                         }
 
+                                        clearAuthResolutionError()
                                         resolveEmailAuthMutation.mutate()
                                     }}
                                 >
@@ -561,16 +620,18 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                     </div>
 
                     <div className="space-y-3">
-                        {isPayOnBoard && (
+                        {isPayOnBoard && !bookedResult && (
                             <Button
                                 type="button"
                                 className="w-full"
                                 size="lg"
-                                disabled={!isReadyToBook}
                                 loading={bookingMutation.isPending}
-                                onClick={() => bookingMutation.mutate()}
+                                onClick={() => {
+                                    setStatusMessage(null)
+                                    bookingMutation.mutate()
+                                }}
                             >
-                                {bookedResult ? t('payment_booked') : t('confirm_btn')} · {formatVnd(totalPrice)}
+                                {t('payment_pay_later')} · {formatVnd(totalPrice)}
                             </Button>
                         )}
                         <Button asChild variant="outline" className="w-full">

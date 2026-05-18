@@ -7,7 +7,10 @@ export const Route = createFileRoute('/auth/login-verify')({
         email: (search.email as string) ?? '',
     }),
     beforeLoad: ({ search }) => {
-        if (!search.email) {
+        const storedEmail = typeof window !== 'undefined'
+            ? window.sessionStorage.getItem('pendingLoginOtpEmail')
+            : null
+        if (!search.email && !storedEmail) {
             throw redirect({ to: APP_ROUTES.LOGIN })
         }
     },
@@ -16,5 +19,8 @@ export const Route = createFileRoute('/auth/login-verify')({
 
 function LoginVerifyRoute() {
     const search = Route.useSearch()
-    return <LoginVerifyPage email={search.email} />
+    const storedEmail = typeof window !== 'undefined'
+        ? window.sessionStorage.getItem('pendingLoginOtpEmail')
+        : null
+    return <LoginVerifyPage email={search.email || storedEmail || ''} />
 }

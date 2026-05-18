@@ -23,6 +23,7 @@ export function RegisterPage() {
         register: reg,
         handleSubmit,
         setError,
+        clearErrors,
         watch,
         formState: { errors },
     } = useForm<IRegister>({
@@ -39,7 +40,13 @@ export function RegisterPage() {
         setOtpRequested(false)
         setOtp('')
         setOtpMessage(null)
+        clearErrors('root')
     }, [watchedEmail])
+
+    function clearFormError() {
+        clearErrors('root')
+        setOtpMessage(null)
+    }
 
 
     const registerMutation = useMutation({
@@ -93,7 +100,7 @@ export function RegisterPage() {
                         label={t('full_name_label')}
                         placeholder={t('full_name_placeholder')}
                         required
-                        {...reg('fullName')}
+                        {...reg('fullName', { onChange: clearFormError })}
                     />
                     <Input
                         label={t('email_label')}
@@ -101,13 +108,13 @@ export function RegisterPage() {
                         placeholder={t('email_placeholder')}
                         autoComplete="email"
                         required
-                        {...reg('email')}
+                        {...reg('email', { onChange: clearFormError })}
                     />
                     <Input
                         label={t('phone_label')}
                         type="tel"
                         placeholder={t('phone_placeholder')}
-                        {...reg('phone')}
+                        {...reg('phone', { onChange: clearFormError })}
                     />
 
                     <div className="flex gap-2">
@@ -121,7 +128,10 @@ export function RegisterPage() {
                             label={t('otp_label', { defaultValue: 'OTP code' })}
                             placeholder={t('otp_placeholder', { defaultValue: 'Enter the 6-digit code' })}
                             value={otp}
-                            onChange={(e) => setOtp(e.target.value)}
+                            onChange={(e) => {
+                                setOtp(e.target.value)
+                                clearFormError()
+                            }}
                         />
                     )}
 

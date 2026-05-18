@@ -24,6 +24,7 @@ export function LoginVerifyPage({ email }: { email: string }) {
                 return
             }
 
+            window.sessionStorage.removeItem('pendingLoginOtpEmail')
             navigate({ to: APP_ROUTES.CUSTOMER.ROOT })
         },
         onError: (error: any) => {
@@ -80,7 +81,10 @@ export function LoginVerifyPage({ email }: { email: string }) {
                     <Input
                         label={t('otp_label', { defaultValue: 'OTP code' })}
                         value={otp}
-                        onChange={(e) => setOtp(e.target.value)}
+                        onChange={(e) => {
+                            setOtp(e.target.value)
+                            setFeedbackMessage(null)
+                        }}
                         placeholder={t('otp_placeholder', { defaultValue: 'Enter the 6-digit code' })}
                         autoComplete="one-time-code"
                     />

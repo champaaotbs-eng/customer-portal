@@ -15,6 +15,31 @@ interface CreateBookingDto {
     passengerPhone?: string
 }
 
+export interface QrPaymentSession {
+    referenceCode: string
+    totalAmount: number
+    expiresAt: string
+    status: 'pending' | 'paid' | 'failed' | 'expired'
+}
+
+export interface QrPaymentSessionStatus extends QrPaymentSession {
+    isExpired: boolean
+    isPaid: boolean
+    bookingCode: string | null
+    bookingId: string | null
+    bookingStatus: string | null
+    paymentStatus: string | null
+    errorCode: string | null
+    booking: {
+        id: string
+        bookingCode: string
+        totalAmount: number
+        status: string
+        paymentMethod: string
+        expiresAt: string | null
+    } | null
+}
+
 export async function createBooking(payload: CreateBookingDto, token?: string) {
     const response = await api.post<any>('/v1/bookings', payload, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -23,11 +48,18 @@ export async function createBooking(payload: CreateBookingDto, token?: string) {
     return unwrap(response)
 }
 
-export async function createCompanyBooking(payload: CreateBookingDto, companyId: string, token?: string) {
-    const response = await api.post<any>(
-        `/v1/company/bookings?companyId=${encodeURIComponent(companyId)}`,
-        payload,
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined, withCredentials: true },
+export async function createQrPaymentSession(payload: CreateBookingDto, token?: string) {
+    const response = await api.post<QrPaymentSession>('/v1/payments/qr-session', payload, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        withCredentials: true,
+    })
+    return unwrap(response)
+}
+
+export async function checkQrPaymentSessionStatus(referenceCode: string) {
+    const response = await api.get<QrPaymentSessionStatus>(
+        `/v1/payments/qr-session/${encodeURIComponent(referenceCode)}/status`,
+        { withCredentials: true },
     )
     return unwrap(response)
 }
@@ -56,24 +88,11 @@ export async function cancelBooking(id: string, token?: string) {
     return unwrap(response)
 }
 
-export async function listCompanyBookings(companyId: string, query = '', token?: string) {
-    const response = await api.get<any>(
-        `/v1/company/bookings?companyId=${encodeURIComponent(companyId)}${query ? `&${query}` : ''}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined, withCredentials: true },
-    )
-    return unwrap(response)
-}
-
 export async function adminListBookings(query = '', token?: string) {
     const response = await api.get<any>(`/v1/admin/bookings${query ? `?${query}` : ''}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         withCredentials: true,
     })
-    return unwrap(response)
-}
-
-export async function confirmPayment(bookingCode: string) {
-    const response = await api.post<any>('/v1/bookings/webhook/payment', { bookingCode })
     return unwrap(response)
 }
 
@@ -96,12 +115,11 @@ export async function checkBookingPaymentStatus(bookingCode: string) {
 
 export default {
     createBooking,
-    createCompanyBooking,
     listMyBookings,
     getBookingByCode,
     cancelBooking,
-    listCompanyBookings,
     adminListBookings,
-    confirmPayment,
     checkBookingPaymentStatus,
+    createQrPaymentSession,
+    checkQrPaymentSessionStatus,
 }

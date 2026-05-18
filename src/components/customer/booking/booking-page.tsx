@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
@@ -6,10 +7,13 @@ import { CheckCircle2, ChevronLeft, MapPin, Clock, Bus as BusIcon, ArrowRight, U
 import { fetchTripById, type ApiTrip, type ApiSeat } from '@/services/trips.api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { RouteDirection } from '@/components/shared/route-direction'
+import { StopTypePreview } from '@/components/shared/stop-type-preview'
 import { formatTime, formatDate, formatVnd } from '@/utils/format'
 import { APP_ROUTES } from '@/constants/app-routes'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/auth.store'
 
 interface PassengerForm {
     passengerName: string
@@ -60,6 +64,7 @@ export function BookingPage({ tripId }: { tripId: string }) {
     const { t } = useTranslation('translation', { keyPrefix: 'pages.booking' })
     const { t: tCommon } = useTranslation()
     const navigate = useNavigate()
+    const { user, isAuthenticated } = useAuthStore()
 
     const [step, setStep] = useState<1 | 2>(1)
     const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
@@ -77,17 +82,45 @@ export function BookingPage({ tripId }: { tripId: string }) {
     const hasMultipleFloors = floors.length > 1
 
     const pickupStops = useMemo(
-        () => (trip?.tripStops ?? []).filter(s => s.stopType === 'PICKUP' || s.stopType === 'BOTH').sort((a, b) => a.sortOrder - b.sortOrder),
+        () => (trip?.tripStops ?? []).filter(s => s.stopType === 'PICKUP').sort((a, b) => a.sortOrder - b.sortOrder),
         [trip],
     )
     const dropoffStops = useMemo(
-        () => (trip?.tripStops ?? []).filter(s => s.stopType === 'DROPOFF' || s.stopType === 'BOTH').sort((a, b) => a.sortOrder - b.sortOrder),
+        () => (trip?.tripStops ?? []).filter(s => s.stopType === 'DROPOFF').sort((a, b) => a.sortOrder - b.sortOrder),
         [trip],
     )
+    const pickupStopPreview = pickupStops.map((stop) => ({
+        time: stop.pickupTime ? formatTime(stop.pickupTime) : '',
+        name: stop.locationName,
+        address: stop.locationAddress,
+    }))
+    const dropoffStopPreview = dropoffStops.map((stop) => ({
+        time: stop.dropoffTime ? formatTime(stop.dropoffTime) : '',
+        name: stop.locationName,
+        address: stop.locationAddress,
+    }))
 
-    const { register, handleSubmit, formState: { errors } } = useForm<PassengerForm>({
+    const { register, handleSubmit, setValue, getValues, formState: { errors } } = useForm<PassengerForm>({
         defaultValues: { passengerName: '', passengerEmail: '', passengerPhone: '', pickupStopId: '', dropoffStopId: '', note: '' },
     })
+
+    useEffect(() => {
+        if (!isAuthenticated || !user) return
+
+        const currentValues = getValues()
+
+        if (!currentValues.passengerName.trim() && user.name?.trim()) {
+            setValue('passengerName', user.name.trim(), { shouldDirty: false })
+        }
+
+        if (!currentValues.passengerEmail.trim() && user.email?.trim()) {
+            setValue('passengerEmail', user.email.trim(), { shouldDirty: false })
+        }
+
+        if (!currentValues.passengerPhone.trim() && user.phone?.trim()) {
+            setValue('passengerPhone', user.phone.trim(), { shouldDirty: false })
+        }
+    }, [getValues, isAuthenticated, setValue, user])
 
     function toggleSeat(seatId: string) {
         const seat = seats.find(s => s.seatId === seatId)
@@ -140,7 +173,7 @@ export function BookingPage({ tripId }: { tripId: string }) {
     }
 
     const selectedSeats = seats.filter(s => selectedSeatIds.includes(s.seatId))
-    const totalPrice = selectedSeats.reduce((sum, s) => sum + (trip.basePrice + s.price), 0)
+    const totalPrice = selectedSeats.reduce((sum, s) => sum + s.price, 0)
     const stepLabels = [t('step_seat'), t('step_info'), t('step_payment')]
 
     console.log('check step', { step, selectedSeatIds, activeFloor })
@@ -244,6 +277,14 @@ export function BookingPage({ tripId }: { tripId: string }) {
                         <div className="space-y-4">
                             <TripInfoBar trip={trip} seatCodes={selectedSeats.map(s => s.seatCode)} />
 
+                            <StopTypePreview
+                                pickupStops={pickupStopPreview}
+                                dropoffStops={dropoffStopPreview}
+                                pickupLabel={t('pickup_title')}
+                                dropoffLabel={t('dropoff_title')}
+                                emptyLabel="—"
+                            />
+
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
                                     <div className="flex items-center gap-2">
@@ -332,7 +373,10 @@ export function BookingPage({ tripId }: { tripId: string }) {
                         <div className="self-start space-y-4 lg:sticky lg:top-24">
                             <div className="rounded-2xl border border-border bg-card p-5 space-y-2">
                                 <h3 className="mb-3 font-semibold">{t('order_summary')}</h3>
-                                <SummaryRow label={t('summary_route')} value={`${trip.fromLocationName ?? '—'} → ${trip.toLocationName ?? '—'}`} />
+                                <SummaryRow
+                                    label={t('summary_route')}
+                                    value={<RouteDirection pickup={trip.fromLocationName} dropoff={trip.toLocationName} emptyLabel="—" className="text-right" />}
+                                />
                                 <SummaryRow label={t('summary_departure')} value={formatDate(trip.departureTime)} />
                                 <SummaryRow label={t('summary_seats')} value={selectedSeats.map(s => s.seatCode).join(', ')} />
                                 <div className="border-t border-border pt-2">
@@ -368,13 +412,12 @@ function TripInfoBar({ trip, seatCodes }: { trip: ApiTrip; seatCodes?: string[] 
                     <div className="flex items-center gap-3">
                         <div>
                             <p className="text-xl font-bold leading-none">{formatTime(trip.departureTime)}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{trip.fromLocationName ?? '—'}</p>
                         </div>
                         <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <div>
                             <p className="text-xl font-bold leading-none">{formatTime(trip.arrivalTime)}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{trip.toLocationName ?? '—'}</p>
                         </div>
+                        <RouteDirection pickup={trip.fromLocationName} dropoff={trip.toLocationName} emptyLabel="—" />
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
@@ -496,7 +539,7 @@ function SeatMap({
     )
 }
 
-function SummaryRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+function SummaryRow({ label, value, bold }: { label: string; value: ReactNode; bold?: boolean }) {
     return (
         <div className="flex items-center justify-between gap-4 py-0.5">
             <span className="text-sm text-muted-foreground">{label}</span>
@@ -504,4 +547,3 @@ function SummaryRow({ label, value, bold }: { label: string; value: string; bold
         </div>
     )
 }
-

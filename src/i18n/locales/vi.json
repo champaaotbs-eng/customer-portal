@@ -116,6 +116,14 @@
         "reserved": "Đã giữ chỗ",
         "confirmed_on_board": "Xác nhận trên xe"
     },
+    "errors": {
+        "unauthorized": "Bạn chưa được xác thực",
+        "internal_server_error": "Có lỗi xảy ra. Vui lòng thử lại.",
+        "booking_not_found": "Không tìm thấy vé đặt.",
+        "forbidden_booking_access": "Bạn không có quyền truy cập vé này.",
+        "booking_cancel_cutoff_passed": "Không thể huỷ vé vì đã quá thời gian cho phép trước giờ khởi hành.",
+        "booking_status_not_cancellable": "Không thể huỷ vé ở trạng thái hiện tại."
+    },
     "busType": {
         "standard": "Ghế ngồi",
         "sleeper": "Giường nằm",
@@ -375,9 +383,11 @@
             "ticket_code": "Mã vé",
             "seat": "Ghế",
             "departure": "Khởi hành",
+            "arrival": "Đến nơi",
             "passenger": "Hành khách",
             "cancel_btn": "Huỷ vé",
             "cancel_confirm": "Bạn có chắc muốn huỷ vé này?",
+            "cancel_modal_title": "Huỷ vé",
             "cancel_success": "Huỷ vé thành công",
             "status_pending_payment": "Chờ thanh toán",
             "status_reserved": "Đã giữ chỗ",
@@ -389,6 +399,11 @@
             "payment_method": "Phương thức thanh toán",
             "pickup": "Điểm đón",
             "dropoff": "Điểm trả",
+            "view_detail": "Xem chi tiết",
+            "pay_now_qr": "QR thanh toán",
+            "ticket_qr": "QR vé",
+            "payment_qr_help": "Quét mã QR này để thanh toán.",
+            "driver_qr_help": "Xuất trình mã QR này cho tài xế.",
             "download_ticket": "Tải vé",
             "contact_support": "Liên hệ hỗ trợ"
         }

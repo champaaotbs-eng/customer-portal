@@ -116,6 +116,14 @@
         "reserved": "Reserved",
         "confirmed_on_board": "Confirmed On Board"
     },
+    "errors": {
+        "unauthorized": "Unauthorized",
+        "internal_server_error": "Something went wrong. Please try again.",
+        "booking_not_found": "Booking not found.",
+        "forbidden_booking_access": "You cannot access this booking.",
+        "booking_cancel_cutoff_passed": "This ticket can no longer be canceled because the departure time is too close.",
+        "booking_status_not_cancellable": "This ticket cannot be canceled in its current status."
+    },
     "busType": {
         "standard": "Standard",
         "sleeper": "Sleeper",
@@ -374,9 +382,11 @@
             "ticket_code": "Ticket Code",
             "seat": "Seat",
             "departure": "Departure",
+            "arrival": "Arrival",
             "passenger": "Passenger",
             "cancel_btn": "Cancel Ticket",
             "cancel_confirm": "Are you sure you want to cancel this ticket?",
+            "cancel_modal_title": "Cancel ticket",
             "cancel_success": "Ticket cancelled successfully",
             "status_pending_payment": "Pending Payment",
             "status_reserved": "Reserved",
@@ -388,6 +398,11 @@
             "payment_method": "Payment Method",
             "pickup": "Pickup",
             "dropoff": "Dropoff",
+            "view_detail": "View detail",
+            "pay_now_qr": "Pay QR",
+            "ticket_qr": "Ticket QR",
+            "payment_qr_help": "Scan this QR code to complete payment.",
+            "driver_qr_help": "Show this QR code to the driver.",
             "download_ticket": "Download Ticket",
             "contact_support": "Contact Support"
         }
