@@ -1,4 +1,5 @@
 import { api } from '@/utils/axios.instance'
+import type { Payment } from '@/types'
 
 const unwrap = <T>(response: IResponse<T> | T): T => {
     return (response as IResponse<T>)?.data ?? (response as T)
@@ -80,6 +81,14 @@ export async function getBookingByCode(code: string, token?: string) {
     return unwrap(response)
 }
 
+export async function getBookingPayment(bookingId: string, token?: string) {
+    const response = await api.get<Payment>(`/v1/payments/${encodeURIComponent(bookingId)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        withCredentials: true,
+    })
+    return unwrap(response)
+}
+
 export async function cancelBooking(id: string, token?: string) {
     const response = await api.patch<any>(`/v1/bookings/${encodeURIComponent(id)}/cancel`, undefined, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -117,6 +126,7 @@ export default {
     createBooking,
     listMyBookings,
     getBookingByCode,
+    getBookingPayment,
     cancelBooking,
     adminListBookings,
     checkBookingPaymentStatus,

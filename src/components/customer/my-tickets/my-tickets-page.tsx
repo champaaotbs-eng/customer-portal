@@ -3,11 +3,11 @@ import { Link } from '@tanstack/react-router'
 import { Ticket, Clock, XCircle, MapPin, ArrowRight, Search, QrCode, ChevronDown, ChevronUp, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth.store'
-import { listMyBookings, cancelBooking } from '@/services/bookings.api'
+import { listMyBookings, cancelBooking, getBookingPayment } from '@/services/bookings.api'
 import { generateVietQrDataUrl } from '@/services/vietqr.api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { formatDate, formatVnd, formatTime } from '@/utils/format'
+import { formatDate, formatDateTimeFull, formatVnd, formatTime } from '@/utils/format'
 import { APP_ROUTES } from '@/constants/app-routes'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
@@ -134,6 +134,13 @@ function BookingCard({
     const [showDetails, setShowDetails] = useState(false)
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
     const [qrError, setQrError] = useState<string | null>(null)
+    const bookingId = getBookingId(booking)
+    const paymentQuery = useQuery({
+        queryKey: ['customer-booking-payment', bookingId],
+        queryFn: () => getBookingPayment(bookingId),
+        enabled: showDetails && !!bookingId,
+        staleTime: 30_000,
+    })
 
     const statusKey = booking.status.toLowerCase()
     const borderClass = STATUS_BORDER[statusKey] ?? 'border-l-muted'
@@ -305,6 +312,33 @@ function BookingCard({
                             </div>
                         </div>
                     </div>
+                    {(paymentQuery.data?.collectedAmount !== undefined && paymentQuery.data?.collectedAmount !== null
+                        || paymentQuery.data?.repayAmount !== undefined && paymentQuery.data?.repayAmount !== null
+                        || paymentQuery.data?.confirmedAt) && (
+                        <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                            <p className="mb-2 font-semibold uppercase tracking-wide text-foreground">{t('payment_info')}</p>
+                            <div className="grid gap-2 sm:grid-cols-3">
+                                {paymentQuery.data?.collectedAmount !== undefined && paymentQuery.data?.collectedAmount !== null && (
+                                    <div>
+                                        <p>{t('collected_amount', { defaultValue: 'Collected amount' })}</p>
+                                        <p className="font-semibold text-foreground">{formatVnd(Number(paymentQuery.data.collectedAmount))}</p>
+                                    </div>
+                                )}
+                                {paymentQuery.data?.repayAmount !== undefined && paymentQuery.data?.repayAmount !== null && (
+                                    <div>
+                                        <p>{t('repay_amount', { defaultValue: 'Repay amount' })}</p>
+                                        <p className="font-semibold text-foreground">{formatVnd(Number(paymentQuery.data.repayAmount))}</p>
+                                    </div>
+                                )}
+                                {paymentQuery.data?.confirmedAt && (
+                                    <div>
+                                        <p>{t('confirm_time', { defaultValue: 'Time' })}</p>
+                                        <p className="font-semibold text-foreground">{formatDateTimeFull(paymentQuery.data.confirmedAt)}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

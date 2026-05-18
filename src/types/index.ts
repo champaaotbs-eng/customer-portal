@@ -215,6 +215,10 @@ export interface Payment {
     paymentType: PaymentType
     provider?: PaymentProvider
     method?: string // qr | atm | credit_card | cash | pos
+    confirmedAt?: string
+    confirmationNote?: string
+    collectedAmount?: number
+    repayAmount?: number
     amount: number
     status: PaymentStatus
     transactionCode?: string
