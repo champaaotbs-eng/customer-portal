@@ -5,7 +5,7 @@ const unwrap = <T>(response: IResponse<T> | T): T => {
     return (response as IResponse<T>)?.data ?? (response as T)
 }
 
-interface CreateBookingDto {
+export interface CreateBookingDto {
     tripId: string
     seatIds: string[]
     pickupStopId: string
@@ -16,52 +16,27 @@ interface CreateBookingDto {
     passengerPhone?: string
 }
 
-export interface QrPaymentSession {
-    referenceCode: string
+export interface BookingResult {
+    id: string
+    bookingCode: string
+    userId?: string
+    passengerName?: string
+    passengerEmail?: string
+    passengerPhone?: string
+    tripId: string
     totalAmount: number
-    expiresAt: string
-    status: 'pending' | 'paid' | 'failed' | 'expired'
+    paymentMethod: string
+    status: string
+    expiresAt?: string
+    createdAt: string
+    seats?: { id: string; seatId: string; seatCode?: string; price: number }[]
 }
 
-export interface QrPaymentSessionStatus extends QrPaymentSession {
-    isExpired: boolean
-    isPaid: boolean
-    bookingCode: string | null
-    bookingId: string | null
-    bookingStatus: string | null
-    paymentStatus: string | null
-    errorCode: string | null
-    booking: {
-        id: string
-        bookingCode: string
-        totalAmount: number
-        status: string
-        paymentMethod: string
-        expiresAt: string | null
-    } | null
-}
-
-export async function createBooking(payload: CreateBookingDto, token?: string) {
-    const response = await api.post<any>('/v1/bookings', payload, {
+export async function createBooking(payload: CreateBookingDto, token?: string): Promise<BookingResult> {
+    const response = await api.post<BookingResult>('/v1/bookings', payload, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         withCredentials: true,
     })
-    return unwrap(response)
-}
-
-export async function createQrPaymentSession(payload: CreateBookingDto, token?: string) {
-    const response = await api.post<QrPaymentSession>('/v1/payments/qr-session', payload, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        withCredentials: true,
-    })
-    return unwrap(response)
-}
-
-export async function checkQrPaymentSessionStatus(referenceCode: string) {
-    const response = await api.get<QrPaymentSessionStatus>(
-        `/v1/payments/qr-session/${encodeURIComponent(referenceCode)}/status`,
-        { withCredentials: true },
-    )
     return unwrap(response)
 }
 
@@ -130,6 +105,4 @@ export default {
     cancelBooking,
     adminListBookings,
     checkBookingPaymentStatus,
-    createQrPaymentSession,
-    checkQrPaymentSessionStatus,
 }

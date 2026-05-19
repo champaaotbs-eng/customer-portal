@@ -2,8 +2,8 @@ import { useMemo, useState, useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Bus as BusIcon, CreditCard, Wallet, QrCode, CheckCircle2, MapPin, ArrowRight } from 'lucide-react'
-import { fetchTripById, createBooking, type ApiSeat, type BookingResult } from '@/services/trips.api'
-import { checkBookingPaymentStatus } from '@/services/bookings.api'
+import { fetchTripById, type ApiSeat } from '@/services/trips.api'
+import { createBooking, checkBookingPaymentStatus, type BookingResult } from '@/services/bookings.api'
 import { generateVietQrDataUrl } from '@/services/vietqr.api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -186,7 +186,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     const seats: ApiSeat[] = trip?.seatAvailability ?? []
     const selectedSeats = seats.filter(s => seatIdList.includes(s.seatId))
     const totalPrice = selectedSeats.reduce((sum, s) => sum + s.price, 0)
-    const bookingCode = bookedResult?.bookingCode ?? bookedResult?.id?.slice(0, 8).toUpperCase() ?? ''
+    const bookingCode = bookedResult?.bookingCode ?? ''
     const qrBookingCode = bookedResult?.bookingCode ?? ''
     const pickupStop = (trip?.tripStops ?? []).find(s => s.tripStopId === search.pickupStopId)
     const dropoffStop = (trip?.tripStops ?? []).find(s => s.tripStopId === search.dropoffStopId)
