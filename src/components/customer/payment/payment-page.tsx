@@ -118,6 +118,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     const [qrError, setQrError] = useState<string | null>(null)
     const [hasCancelled, setHasCancelled] = useState(false)
     const leaveCleanupSentRef = useRef(false)
+    const autoBookingAttemptedRef = useRef(false)
 
     function showSeatNotice(message: string) {
         setSeatNotice(message)
@@ -263,6 +264,18 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
         bookingMutation.mutate()
     }, [retryAfterAuth, accessToken, bookingMutation])
 
+    useEffect(() => {
+        if (paymentMethod !== 'ONLINE') {
+            autoBookingAttemptedRef.current = false
+            return
+        }
+
+        if (bookedResult || bookingMutation.isPending || autoBookingAttemptedRef.current) return
+
+        autoBookingAttemptedRef.current = true
+        bookingMutation.mutate()
+    }, [bookedResult, bookingMutation, paymentMethod])
+
     const bookingCode = bookedResult?.bookingCode ?? ''
     const qrBookingCode = bookedResult?.bookingCode ?? ''
 
@@ -398,12 +411,6 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
             controller.abort()
         }
     }, [bookedResult?.totalAmount, paymentMethod, qrBookingCode, t, totalPrice, vietQrConfig])
-
-    useEffect(() => {
-        if (paymentMethod !== 'ONLINE') return
-        if (bookedResult || bookingMutation.isPending) return
-        bookingMutation.mutate()
-    }, [bookedResult, bookingMutation, paymentMethod])
 
     if (isLoading) {
         return (
@@ -708,11 +715,11 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                 </div>
                             </div>
                             <div className="mt-4 flex flex-wrap gap-3">
-                                <Button asChild variant="outline">
-                                    <Link to={APP_ROUTES.CUSTOMER.MY_TICKETS}>{t('view_my_tickets')}</Link>
+                                <Button variant="outline" onClick={() => window.location.assign(APP_ROUTES.CUSTOMER.MY_TICKETS)}>
+                                    {t('view_my_tickets')}
                                 </Button>
-                                <Button asChild variant="ghost">
-                                    <Link to={APP_ROUTES.CUSTOMER.SEARCH}>{t('find_another_trip')}</Link>
+                                <Button variant="ghost" onClick={() => window.location.assign(APP_ROUTES.CUSTOMER.SEARCH)}>
+                                    {t('find_another_trip')}
                                 </Button>
                             </div>
                         </div>

@@ -298,6 +298,7 @@
             "front_of_bus": "Đầu xe",
             "per_seat": "/ ghế",
             "seat_unavailable": "Ghế đã được đặt hoặc đang giữ bởi khách khác",
+            "seat_unavailable_with_codes": "Các ghế {{seats}} đã được đặt hoặc đang giữ.",
             "seat_hold_lost": "Một ghế bạn chọn vừa được khách khác giữ.",
             "continue_btn": "Tiếp tục ({{count}} ghế)",
             "step_seat": "Chọn ghế",

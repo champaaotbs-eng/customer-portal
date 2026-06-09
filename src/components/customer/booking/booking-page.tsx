@@ -14,7 +14,6 @@ import { APP_ROUTES } from '@/constants/app-routes'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
-import { getSeatHoldToken, holdSeats } from '@/services/bookings.api'
 
 interface PassengerForm {
     passengerName: string
@@ -84,6 +83,12 @@ function SeatToast({ message, onClose }: { message: string; onClose: () => void 
     )
 }
 
+function getUnavailableSeatCodes(seatIds: string[], seats: ApiSeat[]) {
+    return seatIds
+        .map((seatId) => seats.find((seat) => seat.seatId === seatId)?.seatCode ?? seatId)
+        .filter(Boolean)
+}
+
 export function BookingPage({ tripId }: { tripId: string }) {
     const { t } = useTranslation('translation', { keyPrefix: 'pages.booking' })
     const { t: tCommon } = useTranslation()
@@ -105,7 +110,9 @@ export function BookingPage({ tripId }: { tripId: string }) {
         queryKey: ['public-trip', tripId],
         queryFn: () => fetchTripById(tripId),
         enabled: !!tripId,
-        staleTime: 60 * 1000,
+        staleTime: 0,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: 'always',
     })
 
     const seats: ApiSeat[] = trip?.seatAvailability ?? []
@@ -177,28 +184,45 @@ export function BookingPage({ tripId }: { tripId: string }) {
             const seatIds = selectedSeatIdsRef.current
             const latestTrip = await fetchTripById(tripId)
             const latestSeats = latestTrip.seatAvailability ?? []
-            const hasUnavailableSeat = seatIds.some((seatId) => {
+            const conflictingSeatIds = seatIds.filter((seatId) => {
                 const seat = latestSeats.find((item) => item.seatId === seatId)
-                if (!seat) return true
+                if (!seat) {
+                    return true
+                }
 
                 const isHeld = seat.status === 'held' || Boolean(seat.isHeld)
                 return !seat.isAvailable || isHeld
             })
 
-            if (hasUnavailableSeat) {
-                throw new Error('seat_unavailable')
+            if (conflictingSeatIds.length > 0) {
+                const error = new Error('seat_unavailable') as Error & { seatIds?: string[] }
+                error.seatIds = [...new Set(conflictingSeatIds)]
+                throw error
             }
 
-            return holdSeats({
-                tripId,
-                seatIds,
-                holderId: getSeatHoldToken(),
-            })
+            return { seatIds }
         },
         onSuccess: () => {
             setStep(2)
         },
         onError: (err: any) => {
+            const conflictingSeatIds = Array.isArray(err?.seatIds)
+                ? err.seatIds
+                : Array.isArray(err?.response?.data?.seatIds)
+                    ? err.response.data.seatIds
+                    : []
+
+            if (conflictingSeatIds.length) {
+                const seatCodes = getUnavailableSeatCodes(conflictingSeatIds, seats)
+                console.warn('Conflicting seat IDs:', conflictingSeatIds, 'corresponding seat codes:', seatCodes)
+                showSeatToast(
+                    seatCodes.length
+                        ? t('seat_unavailable_with_codes', { seats: seatCodes.join(', ') })
+                        : t('seat_unavailable'),
+                )
+                return
+            }
+
             const errorKey = String(err?.response?.data?.message || err?.message || err?.code || '')
             if (/seats_temporarily_held|seats_already_booked|seat_unavailable/i.test(errorKey)) {
                 showSeatToast(t('seat_unavailable'))
@@ -209,10 +233,33 @@ export function BookingPage({ tripId }: { tripId: string }) {
         },
     })
 
-    function onPassengerSubmit(data: PassengerForm) {
+    async function onPassengerSubmit(data: PassengerForm) {
         console.log('passenger info', data)
         if (!data.pickupStopId) { alert(t('pickup_required')); return }
         if (!data.dropoffStopId) { alert(t('dropoff_required')); return }
+
+        const seatIds = selectedSeatIdsRef.current
+        const latestTrip = await fetchTripById(tripId)
+        const latestSeats = latestTrip.seatAvailability ?? []
+        const conflictingSeatIds = seatIds.filter((seatId) => {
+            const seat = latestSeats.find((item) => item.seatId === seatId)
+            if (!seat) {
+                return true
+            }
+
+            const isHeld = seat.status === 'held' || Boolean(seat.isHeld)
+            return !seat.isAvailable || isHeld
+        })
+
+        if (conflictingSeatIds.length > 0) {
+            const seatCodes = getUnavailableSeatCodes(conflictingSeatIds, latestSeats)
+            showSeatToast(
+                seatCodes.length
+                    ? t('seat_unavailable_with_codes', { seats: seatCodes.join(', ') })
+                    : t('seat_unavailable'),
+            )
+            return
+        }
 
         navigate({
             to: APP_ROUTES.CUSTOMER.PAYMENT(tripId),
@@ -224,7 +271,7 @@ export function BookingPage({ tripId }: { tripId: string }) {
                 passengerEmail: data.passengerEmail,
                 passengerPhone: data.passengerPhone,
                 note: data.note,
-                seatHoldToken: getSeatHoldToken(),
+                seatHoldToken: '',
             },
         })
     }
@@ -246,7 +293,12 @@ export function BookingPage({ tripId }: { tripId: string }) {
                 <BusIcon className="h-16 w-16 text-muted-foreground/30" />
                 <p className="text-lg font-medium text-muted-foreground">{t('trip_not_found')}</p>
                 <Button asChild variant="outline">
-                    <Link to={APP_ROUTES.CUSTOMER.SEARCH}>{t('find_another_trip')}</Link>
+                    <Link
+                        to={APP_ROUTES.CUSTOMER.SEARCH}
+                        search={{ from: '', to: '', date: '' }}
+                    >
+                        {t('find_another_trip')}
+                    </Link>
                 </Button>
             </div>
         )
@@ -512,6 +564,12 @@ function TripInfoBar({ trip, seatCodes }: { trip: ApiTrip; seatCodes?: string[] 
                         <Clock className="h-3.5 w-3.5" />
                         {formatDate(trip.departureTime)}
                     </span>
+                    {formatDate(trip.departureTime) !== formatDate(trip.arrivalTime) && (
+                        <>
+                            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <span>{formatDate(trip.arrivalTime)}</span>
+                        </>
+                    )}
                     {trip.busCompanyName && (
                         <>
                             <span>·</span>

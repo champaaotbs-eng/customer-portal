@@ -298,6 +298,7 @@
             "front_of_bus": "Front of bus",
             "per_seat": "/ seat",
             "seat_unavailable": "This seat is already booked or held by another customer.",
+            "seat_unavailable_with_codes": "Seats {{seats}} are already booked or held.",
             "seat_hold_lost": "A selected seat was just held by another customer.",
             "continue_btn": "Continue ({{count}} seat(s))",
             "step_seat": "Select Seat",

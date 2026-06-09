@@ -50,6 +50,10 @@ export interface TripListResponse {
     meta: { page: number; limit: number; totalPages: number; totalItems: number }
 }
 
+function getSeatHoldToken() {
+    return sessionStorage.getItem('booking-seat-hold-token') ?? ''
+}
+
 export async function fetchTrips(params: {
     departureDate: string
     fromLocation?: string
@@ -83,6 +87,9 @@ export async function fetchTrips(params: {
 }
 
 export async function fetchTripById(id: string): Promise<ApiTrip> {
-    const response = await api.get<ApiTrip>(`/v1/trips/${encodeURIComponent(id)}`)
+    const seatHoldToken = getSeatHoldToken()
+    const response = await api.get<ApiTrip>(`/v1/trips/${encodeURIComponent(id)}`, {
+        params: seatHoldToken ? { seatHoldToken } : undefined,
+    })
     return unwrap(response)
 }
