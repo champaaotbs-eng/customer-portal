@@ -1,4 +1,5 @@
 import { api } from '@/utils/axios.instance'
+import { BASE_API_URL, instance } from '@/utils/axios.instance'
 import type { Payment } from '@/types'
 
 const unwrap = <T>(response: IResponse<T> | T): T => {
@@ -14,6 +15,7 @@ export interface CreateBookingDto {
     passengerName?: string
     passengerEmail?: string
     passengerPhone?: string
+    seatHoldToken?: string
 }
 
 export interface BookingResult {
@@ -38,6 +40,56 @@ export async function createBooking(payload: CreateBookingDto, token?: string): 
         withCredentials: true,
     })
     return unwrap(response)
+}
+
+export interface SeatHoldPayload {
+    tripId: string
+    seatIds: string[]
+    holderId: string
+}
+
+export interface SeatHoldResult {
+    heldSeatIds?: string[]
+    releasedSeatIds?: string[]
+    expiresAt?: number
+}
+
+export type SeatHoldEvent = {
+    tripId: string
+    type: 'snapshot' | 'held' | 'released'
+    seatIds: string[]
+    holderId?: string
+    expiresAt?: number
+}
+
+export function getSeatHoldToken() {
+    const key = 'booking-seat-hold-token'
+    const current = sessionStorage.getItem(key)
+    if (current) return current
+
+    const token = crypto.randomUUID()
+    sessionStorage.setItem(key, token)
+    return token
+}
+
+export async function holdSeats(payload: SeatHoldPayload): Promise<SeatHoldResult> {
+    const response = await api.post<SeatHoldResult>('/v1/bookings/seat-holds', payload, {
+        withCredentials: true,
+    })
+    return unwrap(response)
+}
+
+export async function releaseSeats(payload: SeatHoldPayload): Promise<SeatHoldResult> {
+    const response = await instance.delete<any, IResponse<SeatHoldResult>>('/v1/bookings/seat-holds', {
+        data: payload,
+        withCredentials: true,
+    })
+    return unwrap(response)
+}
+
+export function createSeatHoldEventSource(tripId: string) {
+    const url = `${BASE_API_URL}/v1/bookings/seat-holds/events?tripId=${encodeURIComponent(tripId)}`
+    return new EventSource(url, { withCredentials: true })
 }
 
 export async function listMyBookings(query = '', token?: string) {
@@ -72,6 +124,15 @@ export async function cancelBooking(id: string, token?: string) {
     return unwrap(response)
 }
 
+export async function cancelPaymentBooking(bookingCode: string, passengerEmail: string) {
+    const response = await api.patch<any>(
+        `/v1/bookings/public/${encodeURIComponent(bookingCode)}/cancel-payment`,
+        { passengerEmail },
+        { withCredentials: true },
+    )
+    return unwrap(response)
+}
+
 export async function adminListBookings(query = '', token?: string) {
     const response = await api.get<any>(`/v1/admin/bookings${query ? `?${query}` : ''}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -103,6 +164,10 @@ export default {
     getBookingByCode,
     getBookingPayment,
     cancelBooking,
+    cancelPaymentBooking,
     adminListBookings,
     checkBookingPaymentStatus,
+    holdSeats,
+    releaseSeats,
+    createSeatHoldEventSource,
 }

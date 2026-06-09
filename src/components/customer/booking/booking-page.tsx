@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
-import { CheckCircle2, ChevronLeft, MapPin, Clock, Bus as BusIcon, ArrowRight, User } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronLeft, MapPin, Clock, Bus as BusIcon, ArrowRight, User, X } from 'lucide-react'
 import { fetchTripById, type ApiTrip, type ApiSeat } from '@/services/trips.api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +14,7 @@ import { APP_ROUTES } from '@/constants/app-routes'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
+import { getSeatHoldToken, holdSeats } from '@/services/bookings.api'
 
 interface PassengerForm {
     passengerName: string
@@ -60,6 +61,29 @@ function StepIndicator({ step, labels }: { step: number; labels: string[] }) {
     )
 }
 
+function SeatToast({ message, onClose }: { message: string; onClose: () => void }) {
+    return (
+        <div className="fixed right-4 top-20 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-xl border border-amber-200 bg-background p-4 text-sm shadow-lg">
+            <div className="flex gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                    <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1 pt-0.5 font-medium text-foreground">
+                    {message}
+                </div>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    aria-label="Close"
+                >
+                    <X className="h-4 w-4" />
+                </button>
+            </div>
+        </div>
+    )
+}
+
 export function BookingPage({ tripId }: { tripId: string }) {
     const { t } = useTranslation('translation', { keyPrefix: 'pages.booking' })
     const { t: tCommon } = useTranslation()
@@ -68,7 +92,14 @@ export function BookingPage({ tripId }: { tripId: string }) {
 
     const [step, setStep] = useState<1 | 2>(1)
     const [selectedSeatIds, setSelectedSeatIds] = useState<string[]>([])
+    const [seatToast, setSeatToast] = useState<string | null>(null)
     const [activeFloor, setActiveFloor] = useState<1 | 2>(1)
+    const selectedSeatIdsRef = useRef<string[]>([])
+
+    function showSeatToast(message: string) {
+        setSeatToast(message)
+        window.setTimeout(() => setSeatToast(null), 5000)
+    }
 
     const { data: trip, isLoading } = useQuery({
         queryKey: ['public-trip', tripId],
@@ -105,6 +136,10 @@ export function BookingPage({ tripId }: { tripId: string }) {
     })
 
     useEffect(() => {
+        selectedSeatIdsRef.current = selectedSeatIds
+    }, [selectedSeatIds])
+
+    useEffect(() => {
         if (!isAuthenticated || !user) return
 
         const currentValues = getValues()
@@ -124,11 +159,55 @@ export function BookingPage({ tripId }: { tripId: string }) {
 
     function toggleSeat(seatId: string) {
         const seat = seats.find(s => s.seatId === seatId)
-        if (!seat || !seat.isAvailable) return
-        setSelectedSeatIds(prev =>
-            prev.includes(seatId) ? prev.filter(id => id !== seatId) : [...prev, seatId],
-        )
+        if (!seat || !seat.isAvailable || seat.isHeld) {
+            showSeatToast(t('seat_unavailable'))
+            return
+        }
+
+        if (selectedSeatIdsRef.current.includes(seatId)) {
+            setSelectedSeatIds(prev => prev.filter(id => id !== seatId))
+            return
+        }
+
+        setSelectedSeatIds(prev => [...prev, seatId])
     }
+
+    const holdSeatsMutation = useMutation({
+        mutationFn: async () => {
+            const seatIds = selectedSeatIdsRef.current
+            const latestTrip = await fetchTripById(tripId)
+            const latestSeats = latestTrip.seatAvailability ?? []
+            const hasUnavailableSeat = seatIds.some((seatId) => {
+                const seat = latestSeats.find((item) => item.seatId === seatId)
+                if (!seat) return true
+
+                const isHeld = seat.status === 'held' || Boolean(seat.isHeld)
+                return !seat.isAvailable || isHeld
+            })
+
+            if (hasUnavailableSeat) {
+                throw new Error('seat_unavailable')
+            }
+
+            return holdSeats({
+                tripId,
+                seatIds,
+                holderId: getSeatHoldToken(),
+            })
+        },
+        onSuccess: () => {
+            setStep(2)
+        },
+        onError: (err: any) => {
+            const errorKey = String(err?.response?.data?.message || err?.message || err?.code || '')
+            if (/seats_temporarily_held|seats_already_booked|seat_unavailable/i.test(errorKey)) {
+                showSeatToast(t('seat_unavailable'))
+                return
+            }
+
+            showSeatToast(err?.localizedMessage || err?.message || tCommon('common.error'))
+        },
+    })
 
     function onPassengerSubmit(data: PassengerForm) {
         console.log('passenger info', data)
@@ -145,6 +224,7 @@ export function BookingPage({ tripId }: { tripId: string }) {
                 passengerEmail: data.passengerEmail,
                 passengerPhone: data.passengerPhone,
                 note: data.note,
+                seatHoldToken: getSeatHoldToken(),
             },
         })
     }
@@ -180,6 +260,10 @@ export function BookingPage({ tripId }: { tripId: string }) {
 
     return (
         <div className="space-y-6">
+            {seatToast && (
+                <SeatToast message={seatToast} onClose={() => setSeatToast(null)} />
+            )}
+
             <div className="rounded-2xl border border-border bg-card p-5">
                 <StepIndicator step={step} labels={stepLabels} />
             </div>
@@ -216,7 +300,7 @@ export function BookingPage({ tripId }: { tripId: string }) {
                             </div>
                             <div className="mb-5 flex items-center gap-2 rounded-lg bg-muted/50 px-4 py-2 text-xs text-muted-foreground">
                                 <BusIcon className="h-4 w-4 shrink-0" />
-                                <span>{t('front_of_bus', 'Front of bus')}</span>
+                                <span>{t('front_of_bus')}</span>
                             </div>
                             <SeatMap
                                 seats={seats.filter(s => !hasMultipleFloors || s.floor === activeFloor)}
@@ -230,7 +314,7 @@ export function BookingPage({ tripId }: { tripId: string }) {
                         <div className="rounded-2xl border border-border bg-card p-5">
                             <h3 className="mb-4 font-semibold">{t('order_summary')}</h3>
                             {selectedSeats.length === 0 ? (
-                                <p className="text-sm text-muted-foreground">{t('no_seats_selected', 'No seats selected yet')}</p>
+                                <p className="text-sm text-muted-foreground">{t('no_seats_selected')}</p>
                             ) : (
                                 <div className="space-y-3">
                                     <div className="flex flex-wrap gap-1.5">
@@ -263,7 +347,8 @@ export function BookingPage({ tripId }: { tripId: string }) {
                             className="w-full"
                             size="lg"
                             disabled={selectedSeatIds.length === 0}
-                            onClick={() => setStep(2)}
+                            loading={holdSeatsMutation.isPending}
+                            onClick={() => holdSeatsMutation.mutate()}
                         >
                             {t('continue_btn', { count: selectedSeatIds.length })}
                         </Button>
@@ -402,6 +487,8 @@ export function BookingPage({ tripId }: { tripId: string }) {
 }
 
 function TripInfoBar({ trip, seatCodes }: { trip: ApiTrip; seatCodes?: string[] }) {
+    const { t } = useTranslation('translation', { keyPrefix: 'pages.booking' })
+
     return (
         <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-r from-primary/5 to-background">
             <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
@@ -440,7 +527,7 @@ function TripInfoBar({ trip, seatCodes }: { trip: ApiTrip; seatCodes?: string[] 
                 </div>
                 <div className="text-right">
                     <p className="text-xl font-bold text-primary">{formatVnd(trip.basePrice)}</p>
-                    <p className="text-xs text-muted-foreground">/ seat</p>
+                    <p className="text-xs text-muted-foreground">{t('per_seat')}</p>
                 </div>
             </div>
         </div>
@@ -461,6 +548,10 @@ function SeatLegend({ t }: { t: ReturnType<typeof useTranslation>['t'] }) {
             <span className="flex items-center gap-1.5">
                 <span className="inline-block h-5 w-5 rounded bg-muted" />
                 {t('seat_legend_booked')}
+            </span>
+            <span className="flex items-center gap-1.5">
+                <span className="inline-block h-5 w-5 rounded border border-amber-300 bg-amber-100" />
+                {t('seat_legend_held')}
             </span>
         </div>
     )
@@ -510,7 +601,9 @@ function SeatMap({
                         </div>
                         {sorted.map(seat => {
                             const isSelected = selectedIds.includes(seat.seatId)
-                            const taken = !seat.isAvailable
+                            const held = seat.status === 'held' || Boolean(seat.isHeld)
+                            const booked = seat.status === 'booked' || (!seat.isAvailable && !held)
+                            const taken = held || booked
                             return (
                                 <button
                                     key={seat.seatId}
@@ -522,7 +615,9 @@ function SeatMap({
                                         'flex h-10 w-10 items-center justify-center rounded-lg text-xs font-semibold transition-all',
                                         hasAisle && seat.col >= 3 && 'ml-4',
                                         taken
-                                            ? 'cursor-not-allowed bg-muted text-muted-foreground'
+                                            ? held
+                                                ? 'cursor-not-allowed border border-amber-300 bg-amber-100 text-amber-700'
+                                                : 'cursor-not-allowed bg-muted text-muted-foreground'
                                             : isSelected
                                                 ? 'border-2 border-primary bg-primary text-primary-foreground shadow-sm'
                                                 : 'border-2 border-border bg-background hover:border-primary hover:bg-primary/5',

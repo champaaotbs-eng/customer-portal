@@ -10,6 +10,7 @@ export const Route = createFileRoute('/customer/payment/$tripId')({
         passengerEmail: (search.passengerEmail as string) ?? '',
         passengerPhone: (search.passengerPhone as string) ?? '',
         note: (search.note as string) ?? '',
+        seatHoldToken: (search.seatHoldToken as string) ?? '',
     }),
     component: PaymentRoute,
 })

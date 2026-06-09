@@ -40,7 +40,9 @@ export interface ApiSeat {
     col: number
     floor: number
     price: number
+    status?: 'available' | 'held' | 'booked'
     isAvailable: boolean
+    isHeld?: boolean
 }
 
 export interface TripListResponse {

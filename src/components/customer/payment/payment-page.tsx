@@ -1,9 +1,15 @@
-import { useMemo, useState, useEffect } from 'react'
-import { Link } from '@tanstack/react-router'
+import { useMemo, useState, useEffect, useRef } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Bus as BusIcon, CreditCard, Wallet, QrCode, CheckCircle2, MapPin, ArrowRight } from 'lucide-react'
+import { Bus as BusIcon, CreditCard, Wallet, QrCode, CheckCircle2, MapPin, ArrowRight, Clock } from 'lucide-react'
 import { fetchTripById, type ApiSeat } from '@/services/trips.api'
-import { createBooking, checkBookingPaymentStatus, type BookingResult } from '@/services/bookings.api'
+import {
+    cancelPaymentBooking,
+    createBooking,
+    checkBookingPaymentStatus,
+    releaseSeats,
+    type BookingResult,
+} from '@/services/bookings.api'
 import { generateVietQrDataUrl } from '@/services/vietqr.api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
 import { resolveOrCreateWithEmailOtp, sendCustomerEmailOtp } from '@/services/auth/customer-auth.api'
 import { isAuthError } from '@/services/auth.service'
+import { BASE_API_URL } from '@/utils/axios.instance'
 
 type PaymentMethod = 'ONLINE' | 'PAY_ON_BOARD'
 
@@ -25,6 +32,31 @@ type PaymentSearch = {
     passengerEmail: string
     passengerPhone: string
     note: string
+    seatHoldToken: string
+}
+
+function formatCountdown(totalSeconds: number) {
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function sendJsonKeepalive(url: string, payload: unknown) {
+    const body = JSON.stringify(payload)
+
+    if (navigator.sendBeacon) {
+        const blob = new Blob([body], { type: 'application/json' })
+        if (navigator.sendBeacon(url, blob)) return
+    }
+
+    void fetch(url, {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        keepalive: true,
+    }).catch(() => undefined)
 }
 
 function StepIndicator({ step, labels }: { step: number; labels: string[] }) {
@@ -67,13 +99,16 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     const { t } = useTranslation('translation', { keyPrefix: 'pages.booking' })
     const { t: tCommon } = useTranslation()
     const { accessToken } = useAuthStore()
+    const navigate = useNavigate()
 
     const seatIdList = useMemo(() => search.seatIds.split(',').map(s => s.trim()).filter(Boolean), [search.seatIds])
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ONLINE')
     const [bookedResult, setBookedResult] = useState<BookingResult | null>(null)
     const [paymentConfirmed, setPaymentConfirmed] = useState(false)
     const [statusMessage, setStatusMessage] = useState<string | null>(null)
+    const [seatNotice, setSeatNotice] = useState<string | null>(null)
     const [isExpired, setIsExpired] = useState(false)
+    const [now, setNow] = useState(() => Date.now())
     const [otp, setOtp] = useState('')
     const [authResolutionError, setAuthResolutionError] = useState<string | null>(null)
     const [authResolutionRequired, setAuthResolutionRequired] = useState<string | null>(null)
@@ -81,6 +116,13 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
     const [retryAfterAuth, setRetryAfterAuth] = useState(false)
     const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
     const [qrError, setQrError] = useState<string | null>(null)
+    const [hasCancelled, setHasCancelled] = useState(false)
+    const leaveCleanupSentRef = useRef(false)
+
+    function showSeatNotice(message: string) {
+        setSeatNotice(message)
+        window.setTimeout(() => setSeatNotice(null), 5000)
+    }
     function clearAuthResolutionError() {
         setAuthResolutionError(null)
     }
@@ -102,6 +144,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
             passengerName: search.passengerName || undefined,
             passengerEmail: search.passengerEmail || undefined,
             passengerPhone: search.passengerPhone || undefined,
+            seatHoldToken: search.seatHoldToken || undefined,
         }, accessToken ?? undefined),
         onSuccess: (result) => {
             setBookedResult(result)
@@ -113,8 +156,8 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
         },
         onError: (err: any) => {
             const errorKey = String(err?.response?.data?.message || err?.message || err?.code || '')
-            if (/seats_already_booked/i.test(errorKey)) {
-                alert(t('error_seats_already_booked'))
+            if (/seats_already_booked|seats_temporarily_held/i.test(errorKey)) {
+                showSeatNotice(t('error_seats_already_booked'))
             } else if (
                 errorKey === 'email_already_registered_login_required' ||
                 errorKey === 'booking_email_mismatch_requires_reauth'
@@ -122,7 +165,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                 setAuthResolutionRequired(errorKey)
                 setAuthResolutionError(null)
             } else {
-                alert(err?.localizedMessage || err?.message || tCommon('common.error'))
+                showSeatNotice(err?.localizedMessage || err?.message || tCommon('common.error'))
             }
         },
     })
@@ -166,16 +209,53 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
             setStatusMessage(t('payment_not_received'))
         },
         onError: (err: any) => {
-            alert(err?.message || tCommon('common.error'))
+            showSeatNotice(err?.message || tCommon('common.error'))
+        },
+    })
+
+    const cancelPaymentMutation = useMutation({
+        mutationFn: async () => {
+            if (bookingCode) {
+                await cancelPaymentBooking(bookingCode, search.passengerEmail)
+                return
+            }
+
+            if (search.seatHoldToken) {
+                await releaseSeats({
+                    tripId,
+                    seatIds: seatIdList,
+                    holderId: search.seatHoldToken,
+                })
+            }
+        },
+        onSuccess: () => {
+            setHasCancelled(true)
+            setStatusMessage(t('payment_cancelled'))
+            void navigate({ to: APP_ROUTES.CUSTOMER.BOOKING(tripId) })
+        },
+        onError: (err: any) => {
+            showSeatNotice(err?.localizedMessage || err?.message || tCommon('common.error'))
         },
     })
 
     useEffect(() => {
         if (!bookedResult?.expiresAt) return
-        if (Date.now() > new Date(bookedResult.expiresAt).getTime()) {
+        if (now > new Date(bookedResult.expiresAt).getTime()) {
             setIsExpired(true)
         }
-    }, [bookedResult?.expiresAt])
+    }, [bookedResult?.expiresAt, now])
+
+    useEffect(() => {
+        if (!bookedResult?.expiresAt || paymentConfirmed || isExpired) return
+
+        const intervalId = window.setInterval(() => {
+            setNow(Date.now())
+        }, 1000)
+
+        return () => {
+            window.clearInterval(intervalId)
+        }
+    }, [bookedResult?.expiresAt, isExpired, paymentConfirmed])
 
     useEffect(() => {
         if (!retryAfterAuth || !accessToken) return
@@ -183,14 +263,81 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
         bookingMutation.mutate()
     }, [retryAfterAuth, accessToken, bookingMutation])
 
+    const bookingCode = bookedResult?.bookingCode ?? ''
+    const qrBookingCode = bookedResult?.bookingCode ?? ''
+
+    const shouldBlockUnload =
+        !hasCancelled &&
+        !paymentConfirmed &&
+        !isExpired &&
+        (bookingMutation.isPending || !!bookedResult || !!search.seatHoldToken)
+
+    const shouldCleanupOnLeave =
+        shouldBlockUnload &&
+        !cancelPaymentMutation.isPending &&
+        (Boolean(bookingCode) || Boolean(search.seatHoldToken))
+
+    useEffect(() => {
+        if (!shouldBlockUnload) return
+
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault()
+            event.returnValue = t('payment_leave_warning')
+        }
+
+        window.addEventListener('beforeunload', handleBeforeUnload)
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload)
+        }
+    }, [shouldBlockUnload, t])
+
+    useEffect(() => {
+        if (!shouldCleanupOnLeave) return
+
+        const handlePageHide = () => {
+            if (leaveCleanupSentRef.current) return
+            leaveCleanupSentRef.current = true
+
+            if (bookingCode) {
+                sendJsonKeepalive(
+                    `${BASE_API_URL}/v1/bookings/public/${encodeURIComponent(bookingCode)}/cancel-payment`,
+                    { passengerEmail: search.passengerEmail },
+                )
+                return
+            }
+
+            sendJsonKeepalive(
+                `${BASE_API_URL}/v1/bookings/seat-holds/release`,
+                {
+                    tripId,
+                    seatIds: seatIdList,
+                    holderId: search.seatHoldToken,
+                },
+            )
+        }
+
+        window.addEventListener('pagehide', handlePageHide)
+        return () => {
+            window.removeEventListener('pagehide', handlePageHide)
+        }
+    }, [bookingCode, search.passengerEmail, search.seatHoldToken, seatIdList, shouldCleanupOnLeave, tripId])
+
+    function confirmCancelPayment() {
+        if (!window.confirm(t('payment_cancel_confirm'))) return
+        cancelPaymentMutation.mutate()
+    }
+
     const seats: ApiSeat[] = trip?.seatAvailability ?? []
     const selectedSeats = seats.filter(s => seatIdList.includes(s.seatId))
     const totalPrice = selectedSeats.reduce((sum, s) => sum + s.price, 0)
-    const bookingCode = bookedResult?.bookingCode ?? ''
-    const qrBookingCode = bookedResult?.bookingCode ?? ''
     const pickupStop = (trip?.tripStops ?? []).find(s => s.tripStopId === search.pickupStopId)
     const dropoffStop = (trip?.tripStops ?? []).find(s => s.tripStopId === search.dropoffStopId)
     const stepLabels = [t('step_seat'), t('step_info'), t('step_payment')]
+    const holdSecondsRemaining = bookedResult?.expiresAt
+        ? Math.max(0, Math.ceil((new Date(bookedResult.expiresAt).getTime() - now) / 1000))
+        : 0
+    const holdMinutesRemaining = Math.max(1, Math.ceil(holdSecondsRemaining / 60))
+    const holdCountdown = formatCountdown(holdSecondsRemaining)
 
     const vietQrConfig = useMemo(() => {
         return {
@@ -283,9 +430,16 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
 
     const canCheckPayment = paymentMethod === 'ONLINE' && !!bookingCode && !paymentConfirmed && !isExpired
     const isPayOnBoard = paymentMethod === 'PAY_ON_BOARD'
+    const canCancelPayment = !hasCancelled && !paymentConfirmed && !isExpired && (cancelPaymentMutation.isPending || !!bookedResult || !!search.seatHoldToken)
 
     return (
         <div className="space-y-6">
+            {seatNotice && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                    {seatNotice}
+                </div>
+            )}
+
             <div className="rounded-2xl border border-border bg-card p-5">
                 <StepIndicator step={3} labels={stepLabels} />
             </div>
@@ -410,11 +564,29 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                             )}
 
                             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="text-xs text-muted-foreground">
-                                    {bookedResult?.expiresAt
-                                        ? t('expires_in', { minutes: 15 })
-                                        : t('payment_qr_expire')}
-                                </div>
+                                {bookedResult?.expiresAt ? (
+                                    <div
+                                        className={cn(
+                                            'flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold',
+                                            isExpired
+                                                ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                                                : holdSecondsRemaining <= 60
+                                                    ? 'border-amber-300 bg-amber-50 text-amber-700'
+                                                    : 'border-primary/20 bg-primary/5 text-primary',
+                                        )}
+                                    >
+                                        <Clock className="h-4 w-4" />
+                                        <span>{t('payment_timer_label')}</span>
+                                        <span className="font-mono text-sm tabular-nums">{holdCountdown}</span>
+                                        <span className="text-muted-foreground">
+                                            {t('expires_in', { minutes: holdMinutesRemaining })}
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <div className="text-xs text-muted-foreground">
+                                        {t('payment_qr_expire')}
+                                    </div>
+                                )}
                                 <div className="flex flex-wrap gap-2">
                                     <Button
                                         type="button"
@@ -440,13 +612,11 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                             <div>
                                 <p className="text-sm font-semibold text-amber-900">
                                     {authResolutionRequired === 'booking_email_mismatch_requires_reauth'
-                                        ? t('reauth_title', { defaultValue: 'Verify the new email to continue' })
-                                        : t('login_required_title', { defaultValue: 'Login required for this email address' })}
+                                        ? t('reauth_title')
+                                        : t('login_required_title')}
                                 </p>
                                 <p className="text-xs text-amber-800">
-                                    {t('email_auth_required_desc', {
-                                        defaultValue: 'This email address already has an account or does not match the current session. Verify it with OTP to continue booking.',
-                                    })}
+                                    {t('email_auth_required_desc')}
                                 </p>
                             </div>
 
@@ -469,22 +639,22 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                         }
 
                                         setOtpRequested(true)
-                                        setAuthResolutionError(t('otp_sent', { defaultValue: 'OTP sent to your email.' }))
+                                        setAuthResolutionError(t('otp_sent'))
                                     }}
                                 >
-                                    {t('send_otp', { defaultValue: 'Send OTP' })}
+                                    {t('send_otp')}
                                 </Button>
                             </div>
 
                             {otpRequested && (
                                 <Input
-                                    label={t('otp_label', { defaultValue: 'OTP code' })}
+                                    label={t('otp_label')}
                                     value={otp}
                                     onChange={(e) => {
                                         setOtp(e.target.value)
                                         clearAuthResolutionError()
                                     }}
-                                    placeholder={t('otp_placeholder', { defaultValue: 'Enter the 6-digit code' })}
+                                    placeholder={t('otp_placeholder')}
                                 />
                             )}
 
@@ -498,7 +668,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                     loading={resolveEmailAuthMutation.isPending}
                                     onClick={() => {
                                         if (!otp.trim()) {
-                                            setAuthResolutionError(t('otp_required', { defaultValue: 'Enter the OTP to continue.' }))
+                                            setAuthResolutionError(t('otp_required'))
                                             return
                                         }
 
@@ -506,7 +676,7 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                                         resolveEmailAuthMutation.mutate()
                                     }}
                                 >
-                                    {t('verify_otp', { defaultValue: 'Verify OTP' })}
+                                    {t('verify_otp')}
                                 </Button>
                             )}
                         </div>
@@ -636,6 +806,16 @@ export function PaymentPage({ tripId, search }: { tripId: string; search: Paymen
                         )}
                         <Button asChild variant="outline" className="w-full">
                             <Link to={APP_ROUTES.CUSTOMER.BOOKING(tripId)}>{t('back_btn')}</Link>
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            className="w-full"
+                            disabled={!canCancelPayment}
+                            loading={cancelPaymentMutation.isPending}
+                            onClick={confirmCancelPayment}
+                        >
+                            {t('payment_cancel')}
                         </Button>
                     </div>
                 </div>
